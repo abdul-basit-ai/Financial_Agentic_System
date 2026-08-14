@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "financial-agent"
+version = "0.1.0"
+description = "Autonomous Financial Reasoning Agent using Knowledge Graphs and LLMs"
+requires-python = ">=3.11"
+dependencies = [
+    "langchain>=0.2",
+    "langchain-openai>=0.1",
+    "langgraph>=0.1",
+    "neo4j>=5.0",
+    "pandas>=2.0",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+    "streamlit>=1.35",
+    "redis>=5.0",
+    "psycopg2-binary>=2.9",
+    "pgvector>=0.2",
+    "python-dotenv>=1.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "isort>=5.13",
+    "pre-commit>=3.7",
+    "pip-audit>=2.7",
+    "ragas>=0.1",
+    "deepeval>=0.21",
+]
+mlops = [
+    "mlflow>=2.13",
+    "dvc[s3]>=3.50",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

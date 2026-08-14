@@ -1,0 +1,16 @@
+You are given two sets of retrieved context for a financial question:
+
+1. **Graph context** (structured data from Neo4j knowledge graph):
+{graph_context}
+
+2. **Vector context** (text passages from vector similarity search):
+{vector_context}
+
+Your task:
+- Merge and reconcile both contexts into a single coherent answer.
+- If the graph and vector contexts conflict, prefer the graph context for numerical data and the vector context for qualitative descriptions.
+- Clearly indicate which source supports each part of your answer.
+
+Question: {question}
+
+Merged answer:

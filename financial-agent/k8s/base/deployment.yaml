@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: financial-agent-api
+  labels:
+    app: financial-agent-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: financial-agent-api
+  template:
+    metadata:
+      labels:
+        app: financial-agent-api
+    spec:
+      containers:
+        - name: api
+          image: financial-agent-api:latest
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: financial-agent-config
+            - secretRef:
+                name: financial-agent-secrets
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"

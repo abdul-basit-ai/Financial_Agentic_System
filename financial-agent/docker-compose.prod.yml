@@ -1,0 +1,89 @@
+services:
+  neo4j:
+    image: neo4j:5
+    container_name: financial-agent-neo4j
+    restart: always
+    ports:
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=${NEO4J_USER}/${NEO4J_PASSWORD}
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "1.0"
+
+  redis:
+    image: redis:7-alpine
+    container_name: financial-agent-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: financial-agent-pgvector
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: financial_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: financial-agent-api
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - neo4j
+      - redis
+      - pgvector
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    container_name: financial-agent-ui
+    restart: always
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  redis_data:
+  pgvector_data:

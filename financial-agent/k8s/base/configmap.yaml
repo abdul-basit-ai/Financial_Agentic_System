@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: financial-agent-config
+data:
+  NEO4J_URI: "bolt://neo4j:7687"
+  REDIS_URL: "redis://redis:6379"
+  POSTGRES_HOST: "pgvector"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "financial_agent"
