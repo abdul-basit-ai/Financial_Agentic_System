@@ -26,6 +26,7 @@ def plan_node(state: AgentStateV1) -> dict[str, Any]:
         return {
             "iteration_count": new_iteration,
             "scratchpad": [log_entry],
+            "risk_evaluated": False,
         }
 
     # Macro-decomposition of user financial question
@@ -51,4 +52,5 @@ def plan_node(state: AgentStateV1) -> dict[str, Any]:
         "iteration_count": new_iteration,
         "tool_calls": pending_calls,
         "scratchpad": [log_entry],
+        "risk_evaluated": False,
     }

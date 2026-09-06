@@ -1,10 +1,17 @@
 """Agent graph nodes export."""
 
 from agent.nodes.compute_node import compute_node
+from agent.nodes.hitl_nodes import (
+    AUDIT_LEDGER,
+    apply_override_node,
+    eval_financial_risk_node,
+    hitl_gate_node,
+)
 from agent.nodes.memory_node import read_memory_node, write_memory_node
 from agent.nodes.parallel_nodes import (
     aggregate_sub_tasks_node,
     fan_out_router,
+    fan_out_router_node,
     sub_task_worker,
 )
 from agent.nodes.plan_node import plan_node
@@ -26,5 +33,10 @@ __all__ = [
     "synthesize_node",
     "sub_task_worker",
     "fan_out_router",
+    "fan_out_router_node",
     "aggregate_sub_tasks_node",
+    "eval_financial_risk_node",
+    "hitl_gate_node",
+    "apply_override_node",
+    "AUDIT_LEDGER",
 ]

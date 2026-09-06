@@ -73,8 +73,12 @@ class AgentStateV1(BaseModel):
     )
 
     # Human-in-the-Loop & Execution Control
-    hitl_status: Literal["NONE", "PENDING", "APPROVED", "REJECTED"] = Field(
+    hitl_status: Literal["NONE", "PENDING", "APPROVED", "APPROVE", "REJECTED", "REJECT", "EDIT"] = Field(
         default="NONE", description="Phase 8 approval gate status"
+    )
+    risk_evaluated: bool = Field(
+        default=False,
+        description="True once eval_risk ran in the current iteration (prevents re-eval loops after compute)",
     )
     final_answer: str | None = Field(
         default=None, description="Synthesized final financial answer"

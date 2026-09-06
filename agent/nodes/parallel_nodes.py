@@ -169,6 +169,13 @@ def fan_out_router(state: AgentStateV1) -> list[Send] | str:
     return "synthesize_answer"
 
 
+def fan_out_router_node(state: AgentStateV1) -> dict[str, Any]:
+    """No-op node for EDIT re-entry: exists so conditional edges from eval_risk
+    can land on a node that re-dispatches the Send fan-out. Marks the risk
+    re-check as complete for this pass."""
+    return {"scratchpad": ["[Fan-Out] Re-dispatching edited sub-tasks under governance."]}
+
+
 def aggregate_sub_tasks_node(state: AgentStateV1) -> dict[str, Any]:
     """Fan-in synchronization barrier: marks completed tasks and logs barrier convergence."""
     completed_task_ids = set(state.sub_task_results.keys())
