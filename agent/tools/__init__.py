@@ -23,6 +23,12 @@ from agent.tools.graph_tool import (
     GraphRetrievalTool,
     graph_retrieval_tool,
 )
+from agent.tools.memory_tool import (
+    MemoryQueryInput,
+    MemoryQueryOutput,
+    MemoryRetrievalTool,
+    memory_retrieval_tool,
+)
 from agent.tools.safe_math import (
     ASTSecurityError,
     SafeMathEvaluator,
@@ -69,4 +75,8 @@ __all__ = [
     "SubTask",
     "decompose_query",
     "query_decomposition_tool",
+    "MemoryQueryInput",
+    "MemoryQueryOutput",
+    "MemoryRetrievalTool",
+    "memory_retrieval_tool",
 ]
