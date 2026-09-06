@@ -12,6 +12,7 @@ except ImportError:
     except ImportError:
         from langgraph.graph import Send
 
+from agent.nodes.concurrency import ToolSlot
 from agent.state.schema import AgentStateV1
 from agent.tools.graph_tool import GraphQueryInput, graph_retrieval_tool
 from agent.tools.safe_math import SafeMathInput, safe_math_tool
@@ -19,7 +20,12 @@ from agent.tools.vector_tool import VectorSearchInput, vector_retrieval_tool
 
 
 def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
-    """Isolated worker node executing a single SubTask dispatched via Send API."""
+    """Isolated worker node executing a single SubTask dispatched via Send API.
+
+    Concurrency is bounded per-tool via the ToolSlot semaphore registry
+    (agent.nodes.concurrency) — parallel Send branches queue rather than
+    overwhelming downstream stores; wait/contention is logged for Phase 12.
+    """
     task_id = payload.get("task_id", "task_unknown")
     target_tool = payload.get("target_tool")
     tool_payload = payload.get("payload", {})
@@ -29,44 +35,86 @@ def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
     error_msg: str | None = None
     log_entry = ""
 
-    if target_tool == "graph_retrieval":
-        query_input = GraphQueryInput(
-            company_identifier=tool_payload.get("company_identifier", "UNKNOWN"),
-            metric_name=tool_payload.get("metric_name"),
-            year=tool_payload.get("year"),
-            record_id=tool_payload.get("record_id"),
-        )
-        res = graph_retrieval_tool(query_input)
-        success = res.success
-        result_data = res.data.model_dump() if res.data else None
-        error_msg = res.error
-        count = res.data.total_found if res.data else 0
-        log_entry = f"[Parallel Worker: {task_id}] Graph retrieved {count} records."
-
-    elif target_tool == "vector_retrieval":
-        query_input = VectorSearchInput(
-            query_text=tool_payload.get("query_text", ""),
-            top_k=tool_payload.get("top_k", 5),
-        )
-        res = vector_retrieval_tool(query_input)
-        success = res.success
-        result_data = res.data.model_dump() if res.data else None
-        error_msg = res.error
-        count = res.data.total_found if res.data else 0
-        log_entry = f"[Parallel Worker: {task_id}] Vector retrieved {count} chunks."
-
-    elif target_tool == "safe_math":
-        raw_expr = tool_payload.get("expression", "0")
-        res = safe_math_tool(SafeMathInput(expression=raw_expr))
-        success = res.success
-        result_data = res.data.model_dump() if res.data else None
-        error_msg = res.error
-        val = res.data.formatted if res.data else "ERROR"
-        log_entry = f"[Parallel Worker: {task_id}] Math calculated '{raw_expr}' -> {val}"
-
-    else:
+    if target_tool not in {"graph_retrieval", "vector_retrieval", "safe_math"}:
         error_msg = f"Unsupported tool '{target_tool}' in sub_task_worker"
         log_entry = f"[Parallel Worker: {task_id}] Failed: {error_msg}"
+        return {
+            "sub_task_results": {task_id: {
+                "task_id": task_id,
+                "tool_name": target_tool,
+                "success": False,
+                "data": None,
+                "error": error_msg,
+            }},
+            "tool_results": [{
+                "task_id": task_id,
+                "tool_name": target_tool,
+                "success": False,
+                "data": None,
+                "error": error_msg,
+            }],
+            "scratchpad": [log_entry],
+        }
+
+    with ToolSlot(target_tool) as slot:
+        if slot.status == "timeout":
+            # Hard backpressure: fail the task rather than execute unbounded.
+            error_msg = (
+                f"Concurrency limit timeout for '{target_tool}' after "
+                f"{slot.wait_seconds:.1f}s of queuing"
+            )
+            log_entry = f"[Parallel Worker: {task_id}] Rejected: {error_msg}"
+            envelope = {
+                "task_id": task_id,
+                "tool_name": target_tool,
+                "success": False,
+                "data": None,
+                "error": error_msg,
+            }
+            return {
+                "sub_task_results": {task_id: envelope},
+                "tool_results": [envelope],
+                "scratchpad": [log_entry],
+            }
+
+        contention_note = ""
+        if slot.status == "waited":
+            contention_note = f" (queued {slot.wait_seconds:.2f}s for slot)"
+
+        if target_tool == "graph_retrieval":
+            query_input = GraphQueryInput(
+                company_identifier=tool_payload.get("company_identifier", "UNKNOWN"),
+                metric_name=tool_payload.get("metric_name"),
+                year=tool_payload.get("year"),
+                record_id=tool_payload.get("record_id"),
+            )
+            res = graph_retrieval_tool(query_input)
+            success = res.success
+            result_data = res.data.model_dump() if res.data else None
+            error_msg = res.error
+            count = res.data.total_found if res.data else 0
+            log_entry = f"[Parallel Worker: {task_id}] Graph retrieved {count} records.{contention_note}"
+
+        elif target_tool == "vector_retrieval":
+            query_input = VectorSearchInput(
+                query_text=tool_payload.get("query_text", ""),
+                top_k=tool_payload.get("top_k", 5),
+            )
+            res = vector_retrieval_tool(query_input)
+            success = res.success
+            result_data = res.data.model_dump() if res.data else None
+            error_msg = res.error
+            count = res.data.total_found if res.data else 0
+            log_entry = f"[Parallel Worker: {task_id}] Vector retrieved {count} chunks.{contention_note}"
+
+        elif target_tool == "safe_math":
+            raw_expr = tool_payload.get("expression", "0")
+            res = safe_math_tool(SafeMathInput(expression=raw_expr))
+            success = res.success
+            result_data = res.data.model_dump() if res.data else None
+            error_msg = res.error
+            val = res.data.formatted if res.data else "ERROR"
+            log_entry = f"[Parallel Worker: {task_id}] Math calculated '{raw_expr}' -> {val}{contention_note}"
 
     envelope = {
         "task_id": task_id,

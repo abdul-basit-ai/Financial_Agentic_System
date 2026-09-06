@@ -93,7 +93,6 @@ def test_end_to_end_parallel_graph_execution() -> None:
 
     config = {
         "configurable": {"thread_id": session_id},
-        "max_concurrency": 4,
     }
     result = agent.invoke(state.model_dump(), config=config)
 
@@ -101,3 +100,82 @@ def test_end_to_end_parallel_graph_execution() -> None:
     assert result["final_answer"] is not None
     assert len(result["sub_task_results"]) >= 2
     assert any("Fan-In Barrier" in log for log in result["scratchpad"])
+
+
+# =====================================================================
+# Per-Tool Concurrency Limiter Tests (Phase 7 hard backpressure)
+# =====================================================================
+
+
+def test_tool_slot_immediate_and_release() -> None:
+    from agent.nodes.concurrency import ToolSlot, get_contention_stats
+
+    with ToolSlot("safe_math") as slot:
+        assert slot.status == "immediate"
+        assert slot.wait_seconds == 0.0
+    # Released -> next acquire is immediate again
+    with ToolSlot("safe_math") as slot2:
+        assert slot2.status == "immediate"
+
+
+def test_tool_slot_blocks_at_limit_and_queues() -> None:
+    import threading
+
+    from agent.nodes.concurrency import ToolSlot, get_contention_stats
+
+    # Exhaust the graph_retrieval limit (4) from other threads
+    holders: list[ToolSlot] = []
+    entered = threading.Event()
+
+    def hold_slots() -> None:
+        for _ in range(4):
+            s = ToolSlot("graph_retrieval")
+            s.__enter__()
+            holders.append(s)
+        entered.set()
+
+    t = threading.Thread(target=hold_slots)
+    t.start()
+    entered.wait(timeout=5)
+    t.join()
+
+    # 5th acquire must queue (wait) rather than exceed the cap
+    with ToolSlot("graph_retrieval") as slot:
+        assert slot.status in {"waited", "timeout"}
+
+    # Release everything
+    for s in holders:
+        s.__exit__(None, None, None)
+
+    # Slot free again
+    with ToolSlot("graph_retrieval") as after:
+        assert after.status == "immediate"
+
+    stats = get_contention_stats().get("graph_retrieval")
+    assert stats is not None and stats["wait_events"] >= 1
+
+
+def test_worker_fails_task_on_concurrency_timeout(monkeypatch) -> None:
+    """A saturated tool must fail the task cleanly (backpressure), not hang."""
+    from agent.nodes import concurrency
+    from agent.nodes.parallel_nodes import sub_task_worker
+
+    monkeypatch.setattr(concurrency, "MAX_WAIT_SECONDS", 0.2)
+
+    # Occupy all 8 safe_math slots (TOOL_CONCURRENCY_LIMITS["safe_math"])
+    limit = concurrency.TOOL_CONCURRENCY_LIMITS["safe_math"]
+    holders = [concurrency.ToolSlot("safe_math") for _ in range(limit)]
+    for h in holders:
+        h.__enter__()
+    try:
+        out = sub_task_worker({
+            "task_id": "task_x",
+            "target_tool": "safe_math",
+            "payload": {"expression": "add(1, 2)"},
+        })
+        env = out["sub_task_results"]["task_x"]
+        assert env["success"] is False
+        assert "Concurrency limit timeout" in env["error"]
+    finally:
+        for h in holders:
+            h.__exit__(None, None, None)
