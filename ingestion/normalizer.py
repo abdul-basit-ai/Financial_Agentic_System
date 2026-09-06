@@ -15,55 +15,8 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-# Resilient imports with fallbacks
-try:
-    from ingestion.entity_resolution import resolve_metric_names
-except (ModuleNotFoundError, ImportError):
-    try:
-        from entity_resolution import resolve_metric_names
-    except (ModuleNotFoundError, ImportError):
-
-        def resolve_metric_names(metrics: list[str]) -> dict[str, str]:
-            return {m: m.strip().lower() for m in metrics if m}
-
-
-try:
-    from ingestion.unit_normalizer import normalize_with_context
-except (ModuleNotFoundError, ImportError):
-    try:
-        from unit_normalizer import normalize_with_context
-    except (ModuleNotFoundError, ImportError):
-
-        def normalize_with_context(
-            val: float | None, raw_text: str, *contexts: str
-        ) -> dict[str, Any]:
-            if val is None:
-                return {
-                    "value_base": None,
-                    "unit_label": None,
-                    "scale_multiplier": 1.0,
-                }
-            merged_context = f"{raw_text} {' '.join(contexts)}".lower()
-            multiplier = 1.0
-            unit_label = "unit"
-
-            if any(w in merged_context for w in ["in billion", "billions"]):
-                multiplier = 1e9
-                unit_label = "billion"
-            elif any(w in merged_context for w in ["in million", "millions"]):
-                multiplier = 1e6
-                unit_label = "million"
-            elif any(w in merged_context for w in ["in thousand", "thousands"]):
-                multiplier = 1e3
-                unit_label = "thousand"
-            elif "%" in raw_text or "percent" in merged_context:
-                unit_label = "percent"
-
-            return {
-                "value_base": val * multiplier if unit_label != "percent" else val,
-                "unit_label": unit_label,
-                "scale_multiplier": multiplier,
-            }
+from ingestion.entity_resolution import resolve_metric_names
+from ingestion.unit_normalizer import normalize_with_context
 
 
 SPLITS = ["train", "dev", "test", "private_test"]

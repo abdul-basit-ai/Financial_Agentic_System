@@ -15,96 +15,9 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
 
-# Resilient imports with self-contained fallbacks to prevent pipeline failure
-try:
-    from ingestion.entity_extractor import extract_entities
-except (ModuleNotFoundError, ImportError):
-    try:
-        from entity_extractor import extract_entities
-    except (ModuleNotFoundError, ImportError):
-
-        def extract_entities(
-            question: str,
-            filename: str,
-            pre_text: list[str],
-            post_text: list[str],
-            table: list[list[Any]],
-        ) -> dict[str, list[str]]:
-            text_corpus = f"{question} {' '.join(pre_text)} {' '.join(post_text)}"
-            years = sorted(set(re.findall(r"\b(?:19|20)\d{2}\b", text_corpus)))
-            units = sorted(
-                set(
-                    re.findall(
-                        r"\b(?:million|millions|billion|billions|thousand|thousands|percent|%)\b",
-                        text_corpus,
-                        re.I,
-                    )
-                )
-            )
-            filename_company = re.split(r"[/\\_]", str(filename or ""), maxsplit=1)[0]
-            company_names = (
-                [filename_company.upper()]
-                if filename_company
-                else sorted(set(re.findall(r"\b[A-Z]{2,5}\b", " ".join(pre_text))))
-            )
-            metric_names = []
-            seen_metrics: set[str] = set()
-            for row in table[1:] if isinstance(table, list) else []:
-                if isinstance(row, list) and row and isinstance(row[0], str):
-                    metric = " ".join(row[0].split())
-                    if metric and metric not in seen_metrics:
-                        seen_metrics.add(metric)
-                        metric_names.append(metric)
-            return {
-                "company_names": company_names,
-                "fiscal_years": years,
-                "metric_names": metric_names,
-                "units": units,
-            }
-
-
-try:
-    from ingestion.table_parser import parse_table_structure
-except (ModuleNotFoundError, ImportError):
-    try:
-        from table_parser import parse_table_structure
-    except (ModuleNotFoundError, ImportError):
-
-        def parse_table_structure(table: list[list[Any]]) -> dict[str, Any]:
-            if not isinstance(table, list) or not table:
-                return {"num_rows": 0, "num_cols": 0, "headers": []}
-            headers = (
-                [str(c).strip() for c in table[0]] if isinstance(table[0], list) else []
-            )
-            return {
-                "num_rows": len(table),
-                "num_cols": max(
-                    (len(r) for r in table if isinstance(r, list)), default=0
-                ),
-                "headers": headers,
-            }
-
-
-try:
-    from ingestion.text_chunker import chunk_context
-except (ModuleNotFoundError, ImportError):
-    try:
-        from text_chunker import chunk_context
-    except (ModuleNotFoundError, ImportError):
-
-        def chunk_context(
-            pre_text: list[str], post_text: list[str]
-        ) -> list[dict[str, Any]]:
-            chunks = []
-            for idx, sent in enumerate(pre_text or []):
-                s = str(sent).strip()
-                if s:
-                    chunks.append({"section": "pre_text", "index": idx, "text": s})
-            for idx, sent in enumerate(post_text or []):
-                s = str(sent).strip()
-                if s:
-                    chunks.append({"section": "post_text", "index": idx, "text": s})
-            return chunks
+from ingestion.entity_extractor import extract_entities
+from ingestion.table_parser import parse_table_structure
+from ingestion.text_chunker import chunk_context
 
 
 SPLITS = ["train", "dev", "test", "private_test"]
