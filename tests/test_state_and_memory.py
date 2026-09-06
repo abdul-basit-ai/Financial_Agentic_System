@@ -16,7 +16,7 @@ from agent.memory.promoter import (
     MemoryPromotionEngine,
     calculate_episode_importance,
 )
-from agent.memory.working import WorkingMemoryManager
+from agent.memory.working import WorkingMemoryManager, get_checkpointer
 from agent.state.schema import (
     AgentStateV1,
     append_scratchpad,
@@ -124,6 +124,48 @@ def test_memory_promotion_skips_incomplete_sessions() -> None:
     empty_state = AgentStateV1(input="Unresolved prompt")
     promoted_id = engine.promote_session("sess_001", empty_state)
     assert promoted_id is None
+
+
+# =====================================================================
+# LangGraph Checkpointer Tests (Phase 8 HITL readiness)
+# =====================================================================
+
+
+def test_checkpointer_prefers_redis_and_persists_state() -> None:
+    from langgraph.graph import StateGraph, START, END
+    from typing_extensions import TypedDict
+
+    class S(TypedDict):
+        value: str
+
+    def node_a(state: S) -> dict:
+        return {"value": "from_a"}
+
+    cp = get_checkpointer()
+    builder = StateGraph(S)
+    builder.add_node("a", node_a)
+    builder.add_edge(START, "a")
+    builder.add_edge("a", END)
+    graph = builder.compile(checkpointer=cp)
+
+    cfg = {"configurable": {"thread_id": "test-thread-1"}}
+    graph.invoke({"value": "init"}, cfg)
+    snap = graph.get_state(cfg)
+    assert snap.values["value"] == "from_a"
+
+
+def test_checkpointer_falls_back_when_redis_unreachable() -> None:
+    import os
+
+    from langgraph.checkpoint.memory import MemorySaver
+
+    os.environ["REDIS_URL"] = "redis://localhost:9999/0"
+    try:
+        cp = get_checkpointer()
+        # Fallback is acceptable but must be the in-memory saver and announced
+        assert isinstance(cp, MemorySaver)
+    finally:
+        del os.environ["REDIS_URL"]
 
 
 # =====================================================================

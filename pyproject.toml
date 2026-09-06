@@ -13,6 +13,7 @@ dependencies = [
     "langchain>=0.2",
     "langchain-openai>=0.1",
     "langgraph>=0.1",
+    "langgraph-checkpoint-redis>=2.0",
     "neo4j>=5.0",
     "pandas>=2.0",
     "fastapi>=0.111",

@@ -13,7 +13,7 @@ services:
       - neo4j_logs:/logs
 
   redis:
-    image: redis:7-alpine
+    image: redis/redis-stack-server:latest
     container_name: financial-agent-redis
     restart: unless-stopped
     ports:

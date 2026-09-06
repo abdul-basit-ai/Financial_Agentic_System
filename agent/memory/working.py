@@ -56,14 +56,35 @@ class WorkingMemoryManager:
 def get_checkpointer(redis_url: str | None = None) -> BaseCheckpointSaver:
     """Initializes checkpointer for LangGraph StateGraph persistence.
 
-    Falls back to MemorySaver for local non-Redis environments.
+    Prefers RedisSaver so paused/interrupted state survives process restarts
+    (required by Phase 8 HITL). Falls back to MemorySaver only when the Redis
+    package is missing or the server is unreachable — never silently: the
+    fallback reason is printed for Phase 12 tracing.
+
+    Note: the RedisSaver instance returned here has had .setup() called, which
+    creates its search indices. Requires a Redis server with the RediSearch +
+    ReJSON modules (redis-stack image), not plain redis-server.
     """
+    target_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
     try:
         from langgraph.checkpoint.redis import RedisSaver
 
-        target_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
         client = redis.Redis.from_url(target_url)
         client.ping()
-        return RedisSaver(conn=client)
-    except (ImportError, Exception):
-        return MemorySaver()
+        saver = RedisSaver(redis_client=client)
+        saver.setup()
+        return saver
+    except ImportError as exc:
+        print(
+            f"[working_memory] RedisSaver unavailable ({exc}); falling back to "
+            f"MemorySaver. Paused state will NOT survive process restarts.",
+            flush=True,
+        )
+    except Exception as exc:
+        print(
+            f"[working_memory] Redis unreachable at {target_url} ({exc}); "
+            f"falling back to MemorySaver. Paused state will NOT survive "
+            f"process restarts.",
+            flush=True,
+        )
+    return MemorySaver()
