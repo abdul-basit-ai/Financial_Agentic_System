@@ -1,0 +1,149 @@
+{
+  "tool": "graph_retrieval",
+  "generated_at_utc": "2026-09-06T19:47:27.470946+00:00",
+  "input": {
+    "properties": {
+      "company_identifier": {
+        "description": "Company ticker or slug, e.g. 'AAPL' or 'AMZN'",
+        "title": "Company Identifier",
+        "type": "string"
+      },
+      "metric_name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Financial line-item name, e.g. 'revenue' or 'net_income'",
+        "title": "Metric Name"
+      },
+      "year": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Specific fiscal year filter",
+        "title": "Year"
+      },
+      "record_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Optional FinQA record identifier filter",
+        "title": "Record Id"
+      }
+    },
+    "required": [
+      "company_identifier"
+    ],
+    "title": "GraphQueryInput",
+    "type": "object"
+  },
+  "output": {
+    "$defs": {
+      "GraphMetricRecord": {
+        "properties": {
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "report_id": {
+            "title": "Report Id",
+            "type": "string"
+          },
+          "row_label": {
+            "title": "Row Label",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "normalized_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Amount"
+          }
+        },
+        "required": [
+          "company",
+          "report_id",
+          "row_label",
+          "category",
+          "year",
+          "amount",
+          "normalized_amount"
+        ],
+        "title": "GraphMetricRecord",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "company_identifier": {
+        "title": "Company Identifier",
+        "type": "string"
+      },
+      "records": {
+        "items": {
+          "$ref": "#/$defs/GraphMetricRecord"
+        },
+        "title": "Records",
+        "type": "array"
+      },
+      "total_found": {
+        "title": "Total Found",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "company_identifier",
+      "records",
+      "total_found"
+    ],
+    "title": "GraphQueryOutput",
+    "type": "object"
+  }
+}

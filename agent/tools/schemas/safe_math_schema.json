@@ -1,0 +1,44 @@
+{
+  "tool": "safe_math",
+  "generated_at_utc": "2026-09-06T19:47:27.470946+00:00",
+  "input": {
+    "properties": {
+      "expression": {
+        "description": "Mathematical expression or FinQA DSL program, e.g. '(150.5 + 49.5) / 2' or 'divide(100, 20)'",
+        "title": "Expression",
+        "type": "string"
+      }
+    },
+    "required": [
+      "expression"
+    ],
+    "title": "SafeMathInput",
+    "type": "object"
+  },
+  "output": {
+    "properties": {
+      "expression": {
+        "description": "Original input expression",
+        "title": "Expression",
+        "type": "string"
+      },
+      "result": {
+        "description": "Computed numerical result",
+        "title": "Result",
+        "type": "number"
+      },
+      "formatted": {
+        "description": "Formatted string representation of result",
+        "title": "Formatted",
+        "type": "string"
+      }
+    },
+    "required": [
+      "expression",
+      "result",
+      "formatted"
+    ],
+    "title": "SafeMathOutput",
+    "type": "object"
+  }
+}

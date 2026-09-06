@@ -1,0 +1,96 @@
+{
+  "tool": "query_decomposition",
+  "generated_at_utc": "2026-09-06T19:47:27.470946+00:00",
+  "input": {
+    "properties": {
+      "query": {
+        "description": "User financial question",
+        "title": "Query",
+        "type": "string"
+      },
+      "company": {
+        "default": "UNKNOWN",
+        "description": "Target company ticker",
+        "title": "Company",
+        "type": "string"
+      }
+    },
+    "required": [
+      "query"
+    ],
+    "title": "DecompositionInput",
+    "type": "object"
+  },
+  "output": {
+    "$defs": {
+      "SubTask": {
+        "properties": {
+          "task_id": {
+            "description": "Unique subtask identifier, e.g. 'task_1'",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "target_tool": {
+            "enum": [
+              "graph_retrieval",
+              "vector_retrieval",
+              "safe_math"
+            ],
+            "title": "Target Tool",
+            "type": "string"
+          },
+          "query_payload": {
+            "additionalProperties": true,
+            "description": "Parameters to pass directly to target tool",
+            "title": "Query Payload",
+            "type": "object"
+          },
+          "dependencies": {
+            "description": "IDs of tasks that must resolve first",
+            "items": {
+              "type": "string"
+            },
+            "title": "Dependencies",
+            "type": "array"
+          }
+        },
+        "required": [
+          "task_id",
+          "target_tool",
+          "query_payload"
+        ],
+        "title": "SubTask",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "original_query": {
+        "title": "Original Query",
+        "type": "string"
+      },
+      "is_multi_hop": {
+        "title": "Is Multi Hop",
+        "type": "boolean"
+      },
+      "sub_tasks": {
+        "items": {
+          "$ref": "#/$defs/SubTask"
+        },
+        "title": "Sub Tasks",
+        "type": "array"
+      },
+      "reasoning_plan": {
+        "title": "Reasoning Plan",
+        "type": "string"
+      }
+    },
+    "required": [
+      "original_query",
+      "is_multi_hop",
+      "sub_tasks",
+      "reasoning_plan"
+    ],
+    "title": "DecompositionOutput",
+    "type": "object"
+  }
+}

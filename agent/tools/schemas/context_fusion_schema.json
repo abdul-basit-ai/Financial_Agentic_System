@@ -1,0 +1,223 @@
+{
+  "tool": "context_fusion",
+  "generated_at_utc": "2026-09-06T19:47:27.470946+00:00",
+  "input": {
+    "$defs": {
+      "GraphMetricRecord": {
+        "properties": {
+          "company": {
+            "title": "Company",
+            "type": "string"
+          },
+          "report_id": {
+            "title": "Report Id",
+            "type": "string"
+          },
+          "row_label": {
+            "title": "Row Label",
+            "type": "string"
+          },
+          "category": {
+            "title": "Category",
+            "type": "string"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Year"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Amount"
+          },
+          "normalized_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Normalized Amount"
+          }
+        },
+        "required": [
+          "company",
+          "report_id",
+          "row_label",
+          "category",
+          "year",
+          "amount",
+          "normalized_amount"
+        ],
+        "title": "GraphMetricRecord",
+        "type": "object"
+      },
+      "VectorChunkRecord": {
+        "properties": {
+          "record_id": {
+            "title": "Record Id",
+            "type": "string"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "chunk_index": {
+            "title": "Chunk Index",
+            "type": "integer"
+          },
+          "text_content": {
+            "title": "Text Content",
+            "type": "string"
+          },
+          "similarity_score": {
+            "title": "Similarity Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "record_id",
+          "filename",
+          "section",
+          "chunk_index",
+          "text_content",
+          "similarity_score"
+        ],
+        "title": "VectorChunkRecord",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "graph_records": {
+        "items": {
+          "$ref": "#/$defs/GraphMetricRecord"
+        },
+        "title": "Graph Records",
+        "type": "array"
+      },
+      "vector_chunks": {
+        "items": {
+          "$ref": "#/$defs/VectorChunkRecord"
+        },
+        "title": "Vector Chunks",
+        "type": "array"
+      },
+      "graph_weight": {
+        "default": 1.2,
+        "maximum": 5.0,
+        "minimum": 0.1,
+        "title": "Graph Weight",
+        "type": "number"
+      },
+      "vector_weight": {
+        "default": 1.0,
+        "maximum": 5.0,
+        "minimum": 0.1,
+        "title": "Vector Weight",
+        "type": "number"
+      },
+      "max_context_chars": {
+        "default": 4000,
+        "maximum": 16000,
+        "minimum": 500,
+        "title": "Max Context Chars",
+        "type": "integer"
+      }
+    },
+    "title": "ContextFusionInput",
+    "type": "object"
+  },
+  "output": {
+    "$defs": {
+      "FusedItem": {
+        "properties": {
+          "item_id": {
+            "title": "Item Id",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "rrf_score": {
+            "title": "Rrf Score",
+            "type": "number"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "title": "Metadata",
+            "type": "object"
+          }
+        },
+        "required": [
+          "item_id",
+          "source",
+          "content",
+          "rrf_score",
+          "metadata"
+        ],
+        "title": "FusedItem",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "fused_items": {
+        "items": {
+          "$ref": "#/$defs/FusedItem"
+        },
+        "title": "Fused Items",
+        "type": "array"
+      },
+      "formatted_context": {
+        "title": "Formatted Context",
+        "type": "string"
+      },
+      "total_input_items": {
+        "title": "Total Input Items",
+        "type": "integer"
+      },
+      "retained_items": {
+        "title": "Retained Items",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "fused_items",
+      "formatted_context",
+      "total_input_items",
+      "retained_items"
+    ],
+    "title": "ContextFusionOutput",
+    "type": "object"
+  }
+}

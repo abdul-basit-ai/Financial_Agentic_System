@@ -20,6 +20,7 @@ build/
 /data/processed/
 /data/embeddings/
 /data/dvc_remote/
+/data/metrics/
 *.db
 
 .terraform/

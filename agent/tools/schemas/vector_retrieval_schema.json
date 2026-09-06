@@ -1,0 +1,125 @@
+{
+  "tool": "vector_retrieval",
+  "generated_at_utc": "2026-09-06T19:47:27.470946+00:00",
+  "input": {
+    "properties": {
+      "query_text": {
+        "description": "Semantic search query, e.g. 'reasons for cloud revenue growth'",
+        "title": "Query Text",
+        "type": "string"
+      },
+      "top_k": {
+        "default": 5,
+        "description": "Number of context chunks to retrieve",
+        "maximum": 20,
+        "minimum": 1,
+        "title": "Top K",
+        "type": "integer"
+      },
+      "record_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Filter search to a specific document record",
+        "title": "Record Id"
+      },
+      "split": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Filter search by dataset split ('train', 'dev', 'test')",
+        "title": "Split"
+      }
+    },
+    "required": [
+      "query_text"
+    ],
+    "title": "VectorSearchInput",
+    "type": "object"
+  },
+  "output": {
+    "$defs": {
+      "VectorChunkRecord": {
+        "properties": {
+          "record_id": {
+            "title": "Record Id",
+            "type": "string"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "section": {
+            "title": "Section",
+            "type": "string"
+          },
+          "chunk_index": {
+            "title": "Chunk Index",
+            "type": "integer"
+          },
+          "text_content": {
+            "title": "Text Content",
+            "type": "string"
+          },
+          "similarity_score": {
+            "title": "Similarity Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "record_id",
+          "filename",
+          "section",
+          "chunk_index",
+          "text_content",
+          "similarity_score"
+        ],
+        "title": "VectorChunkRecord",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "query": {
+        "title": "Query",
+        "type": "string"
+      },
+      "chunks": {
+        "items": {
+          "$ref": "#/$defs/VectorChunkRecord"
+        },
+        "title": "Chunks",
+        "type": "array"
+      },
+      "total_found": {
+        "title": "Total Found",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "query",
+      "chunks",
+      "total_found"
+    ],
+    "title": "VectorSearchOutput",
+    "type": "object"
+  }
+}
