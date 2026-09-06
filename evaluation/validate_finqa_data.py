@@ -6,15 +6,16 @@ import argparse
 import json
 import os
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from statistics import mean
-from typing import Any, Dict, Iterable, List, Tuple
+from typing import Any
 
 SPLITS = ["train", "dev", "test", "private_test"]
 
 
-def read_jsonl(path: str) -> Iterable[Dict[str, Any]]:
-    with open(path, "r", encoding="utf-8") as f:
+def read_jsonl(path: str) -> Iterable[dict[str, Any]]:
+    with open(path, encoding="utf-8") as f:
         for line in f:
             line = line.strip()
             if not line:
@@ -22,14 +23,14 @@ def read_jsonl(path: str) -> Iterable[Dict[str, Any]]:
             yield json.loads(line)
 
 
-def load_raw_split(dataset_dir: str, split: str) -> List[Dict[str, Any]]:
+def load_raw_split(dataset_dir: str, split: str) -> list[dict[str, Any]]:
     path = os.path.join(dataset_dir, f"{split}.json")
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
-def index_raw_records(raw_records: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    out: Dict[str, Dict[str, Any]] = {}
+def index_raw_records(raw_records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
     for rec in raw_records:
         rid = str(rec.get("id", ""))
         if rid:
@@ -42,8 +43,10 @@ def missing_like(x: Any) -> bool:
     return v in {"", "-", "--", "---", "na", "n/a", "nm", "none", "null", "nan"}
 
 
-def compare_record(parsed: Dict[str, Any], raw: Dict[str, Any], split: str) -> Tuple[List[str], Counter, Dict[str, float]]:
-    anomalies: List[str] = []
+def compare_record(
+    parsed: dict[str, Any], raw: dict[str, Any], split: str
+) -> tuple[list[str], Counter, dict[str, float]]:
+    anomalies: list[str] = []
     missing = Counter()
 
     qa = raw.get("qa", {}) if isinstance(raw.get("qa"), dict) else {}
@@ -70,9 +73,13 @@ def compare_record(parsed: Dict[str, Any], raw: Dict[str, Any], split: str) -> T
     if len(parsed_table) != len(raw_table):
         anomalies.append("table_row_count_mismatch")
 
-    if int(parsed.get("pre_text_sentence_count", 0)) != len(raw.get("pre_text", []) if isinstance(raw.get("pre_text"), list) else []):
+    if int(parsed.get("pre_text_sentence_count", 0)) != len(
+        raw.get("pre_text", []) if isinstance(raw.get("pre_text"), list) else []
+    ):
         anomalies.append("pre_text_count_mismatch")
-    if int(parsed.get("post_text_sentence_count", 0)) != len(raw.get("post_text", []) if isinstance(raw.get("post_text"), list) else []):
+    if int(parsed.get("post_text_sentence_count", 0)) != len(
+        raw.get("post_text", []) if isinstance(raw.get("post_text"), list) else []
+    ):
         anomalies.append("post_text_count_mismatch")
 
     # Missing/null analysis.
@@ -97,10 +104,16 @@ def compare_record(parsed: Dict[str, Any], raw: Dict[str, Any], split: str) -> T
 
     pct = {
         "table_missing_cell_pct": (missing_cells / total_cells * 100.0) if total_cells else 0.0,
-        "has_multi_year_table": 1.0 if any(
-            any(str(c).strip().isdigit() and len(str(c).strip()) == 4 for c in row if isinstance(row, list))
+        "has_multi_year_table": 1.0
+        if any(
+            any(
+                str(c).strip().isdigit() and len(str(c).strip()) == 4
+                for c in row
+                if isinstance(row, list)
+            )
             for row in raw_table
-        ) else 0.0,
+        )
+        else 0.0,
     }
 
     # Edge tags consistency checks.
@@ -111,7 +124,7 @@ def compare_record(parsed: Dict[str, Any], raw: Dict[str, Any], split: str) -> T
     return anomalies, missing, pct
 
 
-def validate_split(dataset_dir: str, parsed_dir: str, split: str) -> Dict[str, Any]:
+def validate_split(dataset_dir: str, parsed_dir: str, split: str) -> dict[str, Any]:
     raw_records = load_raw_split(dataset_dir, split)
     raw_by_id = index_raw_records(raw_records)
 
@@ -121,7 +134,9 @@ def validate_split(dataset_dir: str, parsed_dir: str, split: str) -> Dict[str, A
     coverage = {
         "raw_records": len(raw_records),
         "parsed_records": len(parsed_records),
-        "parsed_coverage_pct": (len(parsed_records) / len(raw_records) * 100.0) if raw_records else 0.0,
+        "parsed_coverage_pct": (len(parsed_records) / len(raw_records) * 100.0)
+        if raw_records
+        else 0.0,
     }
 
     anomalies = Counter()
@@ -168,7 +183,7 @@ def validate_split(dataset_dir: str, parsed_dir: str, split: str) -> Dict[str, A
     }
 
 
-def render_markdown(report: Dict[str, Any]) -> str:
+def render_markdown(report: dict[str, Any]) -> str:
     lines = []
     lines.append("# FinQA Data Quality Report")
     lines.append("")
@@ -215,11 +230,13 @@ def render_markdown(report: Dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def run(dataset_dir: str, parsed_dir: str, out_json: str, out_md: str, splits: List[str]) -> Dict[str, Any]:
+def run(
+    dataset_dir: str, parsed_dir: str, out_json: str, out_md: str, splits: list[str]
+) -> dict[str, Any]:
     split_reports = [validate_split(dataset_dir, parsed_dir, split) for split in splits]
 
     report = {
-        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "created_at_utc": datetime.now(UTC).isoformat(),
         "dataset_dir": dataset_dir,
         "parsed_dir": parsed_dir,
         "splits": split_reports,
@@ -237,7 +254,9 @@ def run(dataset_dir: str, parsed_dir: str, out_json: str, out_md: str, splits: L
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Validate parsed FinQA records and generate quality reports")
+    parser = argparse.ArgumentParser(
+        description="Validate parsed FinQA records and generate quality reports"
+    )
     parser.add_argument("--dataset-dir", default="data/raw/FinQA-main/dataset")
     parser.add_argument("--parsed-dir", default="data/processed/parsed")
     parser.add_argument("--out-json", default="data/processed/finqa_data_quality_report.json")

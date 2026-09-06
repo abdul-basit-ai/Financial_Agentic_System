@@ -1,0 +1,2 @@
+"""Knowledge graph schema package."""
+

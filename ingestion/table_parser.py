@@ -2,19 +2,32 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import re
+from typing import Any
+
+CLEAN_NUM_RE = re.compile(r"[^\d.-]")
 
 
 def _clean(x: Any) -> str:
     return str(x).strip() if x is not None else ""
 
 
-def parse_table_structure(table: List[List[Any]]) -> Dict[str, Any]:
-    """Infer table structure with heuristics.
+def _is_numeric_cell(val: str) -> bool:
+    s = val.strip()
+    if not s or s in {"-", "--", "---", "na", "n/a", "none", "null"}:
+        return False
+    # Handle accounting brackets: (123) -> -123
+    if s.startswith("(") and s.endswith(")"):
+        s = "-" + s[1:-1]
+    cleaned = CLEAN_NUM_RE.sub("", s)
+    try:
+        float(cleaned)
+        return True
+    except ValueError:
+        return False
 
-    FinQA tables are already flattened text rows, so this parser reconstructs likely
-    structure: multi-header depth, merged/spanned cell cues, and nested row labels.
-    """
+
+def parse_table_structure(table: list[list[Any]]) -> dict[str, Any]:
     if not isinstance(table, list) or not table:
         return {
             "header_rows": [],
@@ -44,16 +57,12 @@ def parse_table_structure(table: List[List[Any]]) -> Dict[str, Any]:
 
     header_depth = 0
     for r in rows[:3]:
-        numeric_like = 0
-        for c in r[1:]:
-            c2 = c.replace(",", "").replace("%", "")
-            try:
-                float(c2)
-                numeric_like += 1
-            except Exception:
-                pass
-        # Header rows tend to have mostly non-numeric cells.
-        if len(r) > 1 and numeric_like <= max(1, (len(r) - 1) // 3):
+        if len(r) <= 1:
+            header_depth += 1
+            continue
+        numeric_like = sum(1 for c in r[1:] if _is_numeric_cell(c))
+        # Header rows have few or no valid financial numbers
+        if numeric_like <= max(1, (len(r) - 1) // 3):
             header_depth += 1
         else:
             break
@@ -65,7 +74,7 @@ def parse_table_structure(table: List[List[Any]]) -> Dict[str, Any]:
     data_rows = rows[header_depth:]
 
     merged_like = False
-    nested_labels: List[Dict[str, Any]] = []
+    nested_labels: list[dict[str, Any]] = []
     last_parent = ""
 
     for ridx, r in enumerate(data_rows, start=header_depth):
@@ -76,11 +85,12 @@ def parse_table_structure(table: List[List[Any]]) -> Dict[str, Any]:
         if first == "" and rest_has_text:
             merged_like = True
 
-        # Heuristic nested row labels: indentation or leading punctuation markers.
         stripped = first.lstrip()
         indent = len(first) - len(stripped)
         if indent > 0 or stripped.startswith(("-", "*", "(", ".")):
-            nested_labels.append({"row_index": ridx, "label": stripped, "parent_label": last_parent})
+            nested_labels.append(
+                {"row_index": ridx, "label": stripped, "parent_label": last_parent}
+            )
         elif stripped:
             last_parent = stripped
 

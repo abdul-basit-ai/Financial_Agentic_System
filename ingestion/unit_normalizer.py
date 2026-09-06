@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 UNIT_MULTIPLIERS = {
     "thousand": 1_000.0,
@@ -16,7 +16,9 @@ UNIT_MULTIPLIERS = {
     "trillions": 1_000_000_000_000.0,
 }
 
-UNIT_RE = re.compile(r"\b(thousand|thousands|million|millions|billion|billions|trillion|trillions)\b", re.IGNORECASE)
+UNIT_RE = re.compile(
+    r"\b(thousand|thousands|million|millions|billion|billions|trillion|trillions)\b", re.IGNORECASE
+)
 
 
 def detect_unit_label(*texts: Any) -> str:
@@ -28,14 +30,14 @@ def detect_unit_label(*texts: Any) -> str:
     return "base"
 
 
-def normalize_value(value: Optional[float], unit_label: str) -> Optional[float]:
+def normalize_value(value: float | None, unit_label: str) -> float | None:
     if value is None:
         return None
     mult = UNIT_MULTIPLIERS.get((unit_label or "").lower(), 1.0)
     return value * mult
 
 
-def normalize_with_context(value: Optional[float], *context_texts: Any) -> Dict[str, Optional[float]]:
+def normalize_with_context(value: float | None, *context_texts: Any) -> dict[str, float | None]:
     unit = detect_unit_label(*context_texts)
     return {
         "unit_label": unit,

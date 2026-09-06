@@ -74,15 +74,11 @@ Implemented in [ingestion/graph_loader.py](../ingestion/graph_loader.py):
 Dry run:
 
 ```bash
-/usr/bin/python3 ingestion/graph_loader.py --dry-run --limit-per-split 100
+python ingestion/graph_loader.py --dry-run --limit-per-split 100
 ```
 
 Live load:
 
 ```bash
-/usr/bin/python3 ingestion/graph_loader.py \
-  --uri bolt://localhost:7687 \
-  --user neo4j \
-  --password password \
-  --database neo4j
+python ingestion/graph_loader.py --uri bolt://localhost:7687 --user neo4j --password password --database neo4j
 ```

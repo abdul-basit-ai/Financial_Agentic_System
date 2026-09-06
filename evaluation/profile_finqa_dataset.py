@@ -1,7 +1,7 @@
 """Profile FinQA raw dataset structure, question/program types, edge cases, and metric categories.
 
 Usage:
-  /usr/bin/python3 evaluation/profile_finqa_dataset.py
+    python evaluation/profile_finqa_dataset.py
 """
 
 from __future__ import annotations
@@ -10,9 +10,9 @@ import argparse
 import json
 import os
 import re
-from collections import Counter, defaultdict
+from collections import Counter
+from collections.abc import Iterable
 from statistics import mean
-from typing import Dict, Iterable, List, Tuple
 
 SPLITS = ["train", "dev", "test", "private_test"]
 PROGRAM_OPS = {
@@ -104,8 +104,8 @@ METRIC_CATEGORIES = {
 }
 
 
-def load_split(path: str) -> List[dict]:
-    with open(path, "r", encoding="utf-8") as f:
+def load_split(path: str) -> list[dict]:
+    with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -115,14 +115,14 @@ def token_count(text: str) -> int:
     return len(WORD_RE.findall(text))
 
 
-def flatten_table(table: List[List[str]]) -> Iterable[str]:
+def flatten_table(table: list[list[str]]) -> Iterable[str]:
     for row in table:
         if isinstance(row, list):
             for cell in row:
                 yield str(cell)
 
 
-def extract_program_ops(program: str) -> List[str]:
+def extract_program_ops(program: str) -> list[str]:
     if not isinstance(program, str) or not program.strip():
         return []
     ops = []
@@ -133,7 +133,7 @@ def extract_program_ops(program: str) -> List[str]:
     return ops
 
 
-def classify_question(question: str, program_ops: List[str], program: str) -> List[str]:
+def classify_question(question: str, program_ops: list[str], program: str) -> list[str]:
     q = (question or "").lower()
     labels = []
 
@@ -158,7 +158,7 @@ def classify_question(question: str, program_ops: List[str], program: str) -> Li
     return labels
 
 
-def detect_metric_categories(text: str) -> List[str]:
+def detect_metric_categories(text: str) -> list[str]:
     t = (text or "").lower()
     matched = []
     for category, keywords in METRIC_CATEGORIES.items():
@@ -173,7 +173,7 @@ def ensure_parent(path: str) -> None:
         os.makedirs(parent, exist_ok=True)
 
 
-def profile_dataset(dataset_dir: str) -> Dict:
+def profile_dataset(dataset_dir: str) -> dict:
     top_keys_union = set()
     top_keys_intersection = None
     qa_keys_union = set()
@@ -202,12 +202,16 @@ def profile_dataset(dataset_dir: str) -> Dict:
         for rec in records:
             keys = set(rec.keys())
             top_keys_union.update(keys)
-            top_keys_intersection = keys if top_keys_intersection is None else (top_keys_intersection & keys)
+            top_keys_intersection = (
+                keys if top_keys_intersection is None else (top_keys_intersection & keys)
+            )
 
             qa = rec.get("qa", {}) if isinstance(rec, dict) else {}
             qa_keys = set(qa.keys()) if isinstance(qa, dict) else set()
             qa_keys_union.update(qa_keys)
-            qa_keys_intersection = qa_keys if qa_keys_intersection is None else (qa_keys_intersection & qa_keys)
+            qa_keys_intersection = (
+                qa_keys if qa_keys_intersection is None else (qa_keys_intersection & qa_keys)
+            )
 
             question = qa.get("question", "") if isinstance(qa, dict) else ""
             program = qa.get("program", "") if isinstance(qa, dict) else ""
@@ -284,7 +288,12 @@ def profile_dataset(dataset_dir: str) -> Dict:
                     global_categories[c] += 1
 
             # Text retrieval edge cues.
-            if isinstance(pre_text, list) and len(pre_text) == 0 and isinstance(post_text, list) and len(post_text) == 0:
+            if (
+                isinstance(pre_text, list)
+                and len(pre_text) == 0
+                and isinstance(post_text, list)
+                and len(post_text) == 0
+            ):
                 edge_cases[f"{split}:no_context_sentences"] += 1
 
         split_stats[split] = {
@@ -293,7 +302,9 @@ def profile_dataset(dataset_dir: str) -> Dict:
             "question_tokens_avg": round(mean(q_lens), 2) if q_lens else 0.0,
             "table_rows_avg": round(mean(table_rows), 2) if table_rows else 0.0,
             "pre_text_sentences_avg": round(mean(pre_sent_counts), 2) if pre_sent_counts else 0.0,
-            "post_text_sentences_avg": round(mean(post_sent_counts), 2) if post_sent_counts else 0.0,
+            "post_text_sentences_avg": round(mean(post_sent_counts), 2)
+            if post_sent_counts
+            else 0.0,
             "top_program_ops": split_ops.most_common(10),
             "question_types": dict(split_qtypes),
             "financial_metric_categories": dict(split_categories),
@@ -317,11 +328,13 @@ def profile_dataset(dataset_dir: str) -> Dict:
     }
 
 
-def render_markdown(summary: Dict) -> str:
+def render_markdown(summary: dict) -> str:
     lines = []
     lines.append("# FinQA Dataset Profiling Report")
     lines.append("")
-    lines.append("This report is auto-generated from raw FinQA JSON files in `data/raw/FinQA-main/dataset`.")
+    lines.append(
+        "This report is auto-generated from raw FinQA JSON files in `data/raw/FinQA-main/dataset`."
+    )
     lines.append("")
     lines.append("## Checklist Coverage")
     lines.append("")
@@ -364,7 +377,9 @@ def render_markdown(summary: Dict) -> str:
         for qt, c in sorted(s["question_types"].items(), key=lambda kv: kv[1], reverse=True):
             lines.append(f"  - {qt}: {c}")
         lines.append("- Financial metric categories:")
-        for cat, c in sorted(s["financial_metric_categories"].items(), key=lambda kv: kv[1], reverse=True):
+        for cat, c in sorted(
+            s["financial_metric_categories"].items(), key=lambda kv: kv[1], reverse=True
+        ):
             lines.append(f"  - {cat}: {c}")
         lines.append("")
 
@@ -377,8 +392,12 @@ def render_markdown(summary: Dict) -> str:
     lines.append("## Notes")
     lines.append("")
     lines.append("- `private_test` has no gold programs by design (blind evaluation split).")
-    lines.append("- `possible_merged_cell_rows` is a heuristic: rows with blank first cell and populated trailing cells.")
-    lines.append("- Question type detection is heuristic and should be refined in the parser for training/eval tasks.")
+    lines.append(
+        "- `possible_merged_cell_rows` is a heuristic: rows with blank first cell and populated trailing cells."
+    )
+    lines.append(
+        "- Question type detection is heuristic and should be refined in the parser for training/eval tasks."
+    )
     lines.append("")
 
     return "\n".join(lines)

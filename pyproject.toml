@@ -6,6 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "financial-agent"
 version = "0.1.0"
 description = "Autonomous Financial Reasoning Agent using Knowledge Graphs and LLMs"
+authors = [{ name = "Financial Agent Team", email = "dev@financial-agent.local" }]
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "langchain>=0.2",
@@ -19,12 +21,15 @@ dependencies = [
     "redis>=5.0",
     "psycopg2-binary>=2.9",
     "pgvector>=0.2",
+    "sentence-transformers>=3.0,<4.0",
+    "transformers>=4.41,<5.0",
     "python-dotenv>=1.0",
     "pydantic>=2.0",
 ]
 
 [project.optional-dependencies]
 dev = [
+    "black>=24.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.4",
@@ -39,6 +44,40 @@ mlops = [
     "mlflow>=2.13",
     "dvc[s3]>=3.50",
 ]
+
+[tool.poetry]
+packages = [
+    { include = "agent" },
+    { include = "api" },
+    { include = "ingestion" },
+    { include = "knowledge" },
+    { include = "evaluation" },
+    { include = "observability" }
+]
+
+[tool.setuptools.packages.find]
+include = [
+    "agent*",
+    "api*",
+    "evaluation*",
+    "ingestion*",
+    "knowledge*",
+    "observability*",
+    "ui*",
+]
+
+[tool.poetry.group.dev.dependencies]
+black = ">=24.0"
+pytest = ">=8.0"
+pytest-asyncio = ">=0.23"
+ruff = ">=0.4"
+mypy = ">=1.10"
+isort = ">=5.13"
+pre-commit = ">=3.7"
+
+[tool.poetry.group.mlops.dependencies]
+mlflow = ">=2.13"
+dvc = {extras = ["s3"], version = ">=3.50"}
 
 [tool.ruff]
 target-version = "py311"
@@ -59,3 +98,6 @@ line_length = 100
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: marks tests as integration tests (require running databases)",
+]

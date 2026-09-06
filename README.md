@@ -8,9 +8,9 @@ agent orchestration, evaluation, API, and UI modules.
 Generate dataset profile, parsed records, and normalized records from raw FinQA:
 
 ```bash
-/usr/bin/python3 evaluation/profile_finqa_dataset.py
-/usr/bin/python3 ingestion/parser.py
-/usr/bin/python3 ingestion/normalizer.py
+python evaluation/profile_finqa_dataset.py
+python ingestion/parser.py
+python ingestion/normalizer.py
 ```
 
 Outputs:
@@ -29,15 +29,11 @@ Final graph schema and DDL are documented in [docs/GRAPH_SCHEMA.md](docs/GRAPH_S
 Run a dry-run load summary:
 
 ```bash
-/usr/bin/python3 ingestion/graph_loader.py --dry-run --limit-per-split 100
+python ingestion/graph_loader.py --dry-run --limit-per-split 100
 ```
 
 Run live load:
 
 ```bash
-/usr/bin/python3 ingestion/graph_loader.py \
-	--uri bolt://localhost:7687 \
-	--user neo4j \
-	--password password \
-	--database neo4j
+python ingestion/graph_loader.py --uri bolt://localhost:7687 --user neo4j --password password --database neo4j
 ```

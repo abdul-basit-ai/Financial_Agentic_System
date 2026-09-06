@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, Iterable, List
+from collections.abc import Iterable
 
 METRIC_SYNONYMS = {
     "net_income": [
@@ -39,8 +39,8 @@ METRIC_SYNONYMS = {
 }
 
 
-def build_inverse_map() -> Dict[str, str]:
-    inverse: Dict[str, str] = {}
+def build_inverse_map() -> dict[str, str]:
+    inverse: dict[str, str] = {}
     for canonical, variants in METRIC_SYNONYMS.items():
         inverse[canonical.lower()] = canonical
         for v in variants:
@@ -58,7 +58,7 @@ def resolve_metric_name(name: str) -> str:
     return INVERSE_METRIC_MAP.get(key, key.replace(" ", "_"))
 
 
-def resolve_metric_names(names: Iterable[str]) -> List[str]:
+def resolve_metric_names(names: Iterable[str]) -> list[str]:
     out = []
     seen = set()
     for n in names:

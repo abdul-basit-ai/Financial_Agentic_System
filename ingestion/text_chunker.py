@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Dict, List
 
-
-def _window_chunks(sentences: List[str], chunk_size: int, stride: int) -> List[Dict]:
-    chunks: List[Dict] = []
+def _window_chunks(sentences: list[str], chunk_size: int, stride: int) -> list[dict]:
+    chunks: list[dict] = []
     if not sentences:
         return chunks
 
@@ -33,12 +31,16 @@ def _window_chunks(sentences: List[str], chunk_size: int, stride: int) -> List[D
     return chunks
 
 
-def chunk_context(pre_text: List[str], post_text: List[str], chunk_size: int = 3, stride: int = 2) -> List[Dict]:
+def chunk_context(
+    pre_text: list[str], post_text: list[str], chunk_size: int = 3, stride: int = 2
+) -> list[dict]:
     """Chunk pre/post text sentence lists into overlapping windows."""
     pre = [str(s).strip() for s in pre_text if str(s).strip()] if isinstance(pre_text, list) else []
-    post = [str(s).strip() for s in post_text if str(s).strip()] if isinstance(post_text, list) else []
+    post = (
+        [str(s).strip() for s in post_text if str(s).strip()] if isinstance(post_text, list) else []
+    )
 
-    out: List[Dict] = []
+    out: list[dict] = []
     for c in _window_chunks(pre, chunk_size, stride):
         c["source"] = "pre_text"
         out.append(c)

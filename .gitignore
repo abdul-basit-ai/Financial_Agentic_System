@@ -5,6 +5,7 @@ __pycache__/
 dist/
 build/
 .eggs/
+.venv/
 
 .env
 .env.*
@@ -15,8 +16,11 @@ build/
 .pytest_cache/
 
 *.dvc/cache
+/data/raw/
 /data/processed/
 /data/embeddings/
+/data/dvc_remote/
+*.db
 
 .terraform/
 *.tfstate
@@ -26,3 +30,4 @@ build/
 neo4j_data/
 redis_data/
 pgvector_data/
+mlflow_data/
