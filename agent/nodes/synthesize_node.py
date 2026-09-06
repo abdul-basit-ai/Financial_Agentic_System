@@ -14,10 +14,24 @@ def synthesize_node(state: AgentStateV1) -> dict[str, Any]:
     """Audits tool results and synthesizes grounded financial response."""
     _, prompt_version, prompt_hash = load_prompt("synthesizer_v1")
 
-    # Check for completed tool evidence
-    math_results = [r for r in state.tool_results if r.get("tool_name") == "safe_math" and r.get("success")]
-    graph_results = [r for r in state.tool_results if r.get("tool_name") == "graph_retrieval" and r.get("success")]
-    vector_results = [r for r in state.tool_results if r.get("tool_name") == "vector_retrieval" and r.get("success")]
+    # Check for completed tool evidence from BOTH sequential (tool_results)
+    # and parallel (sub_task_results) execution paths.
+    def _all_envelopes() -> list[dict[str, Any]]:
+        seen = {
+            (r.get("task_id"), r.get("tool_name"))
+            for r in state.tool_results
+            if r.get("task_id")
+        }
+        parallel_only = [
+            env for tid, env in state.sub_task_results.items()
+            if (tid, env.get("tool_name")) not in seen and isinstance(env, dict)
+        ]
+        return state.tool_results + parallel_only
+
+    all_results = _all_envelopes()
+    math_results = [r for r in all_results if r.get("tool_name") == "safe_math" and r.get("success")]
+    graph_results = [r for r in all_results if r.get("tool_name") == "graph_retrieval" and r.get("success")]
+    vector_results = [r for r in all_results if r.get("tool_name") == "vector_retrieval" and r.get("success")]
 
     # Verification: Do we have sufficient data to answer?
     # A tool can exit cleanly (success=True) yet return zero records — that is

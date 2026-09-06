@@ -91,22 +91,39 @@ def retrieve_vector_node(state: AgentStateV1) -> dict[str, Any]:
 def fuse_context_node(state: AgentStateV1) -> dict[str, Any]:
     """Fuses multi-modal graph records and text chunks using Reciprocal Rank Fusion.
 
+    Reads from BOTH tool_results (sequential path) and sub_task_results
+    (Phase 7 parallel worker path) so parallel branch evidence reaches fusion.
     Persists the fused context into scratchpad so the synthesizer (and Phase 8
     HITL reviewers) can see exactly which evidence blocks were selected.
     """
     graph_records: list[GraphMetricRecord] = []
     vector_chunks: list[VectorChunkRecord] = []
 
-    for res in state.tool_results:
-        data = res.get("data")
-        if not data:
-            continue
-        if res.get("tool_name") == "graph_retrieval" and "records" in data:
-            for r in data["records"]:
-                graph_records.append(GraphMetricRecord(**r))
-        elif res.get("tool_name") == "vector_retrieval" and "chunks" in data:
-            for c in data["chunks"]:
-                vector_chunks.append(VectorChunkRecord(**c))
+    def _collect(envelopes: list[dict[str, Any]]) -> None:
+        for res in envelopes:
+            data = res.get("data")
+            if not data:
+                continue
+            if res.get("tool_name") == "graph_retrieval" and "records" in data:
+                for r in data["records"]:
+                    graph_records.append(GraphMetricRecord(**r))
+            elif res.get("tool_name") == "vector_retrieval" and "chunks" in data:
+                for c in data["chunks"]:
+                    vector_chunks.append(VectorChunkRecord(**c))
+
+    _collect(state.tool_results)
+    # Phase 7 parallel workers report via sub_task_results; include without
+    # duplicating anything already collected from tool_results.
+    seen = {
+        (r.get("task_id"), r.get("tool_name"))
+        for r in state.tool_results
+        if r.get("task_id")
+    }
+    parallel_only = [
+        env for tid, env in state.sub_task_results.items()
+        if (tid, env.get("tool_name")) not in seen and isinstance(env, dict)
+    ]
+    _collect(parallel_only)
 
     fusion_input = ContextFusionInput(
         graph_records=graph_records,
