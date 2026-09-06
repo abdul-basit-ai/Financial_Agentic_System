@@ -15,6 +15,7 @@ from langgraph.checkpoint.memory import MemorySaver
 
 from agent.graph import create_financial_agent
 from agent.state.schema import AgentStateV1
+from agent.tools.decomposer import decompose_query
 
 
 @pytest.fixture
@@ -79,3 +80,51 @@ def test_graph_checkpointer_persistence(agent_runner) -> None:
     assert checkpoint_state is not None
     assert checkpoint_state.values["input"] == initial_state.input
     assert checkpoint_state.values["trace_id"] == output_1["trace_id"]
+
+# =====================================================================
+# Zero-Evidence Synthesis Honesty Tests
+# =====================================================================
+
+
+def test_synthesizer_terminates_honestly_without_evidence(agent_runner) -> None:
+    """Query targeting data absent from the graph must terminate at the
+    iteration limit with an explicit insufficient-evidence answer - never a
+    fabricated or falsely-successful response."""
+    session_id = f"test_{uuid.uuid4().hex[:8]}"
+    initial_state = AgentStateV1(
+        input="What was the change in Amazon revenue from 2019 to 2020?",
+        company_identifier="AMZN",  # sample data has no AMZN 2019/2020 values
+    )
+    config = {"configurable": {"thread_id": session_id}}
+    final_output = agent_runner.invoke(initial_state.model_dump(), config=config)
+
+    assert final_output["is_terminal"] is True
+    assert final_output["final_answer"] is not None
+    assert "Insufficient evidence" in final_output["final_answer"]
+    assert final_output["iteration_count"] <= 4
+
+
+def test_decomposer_routes_unanchored_metric_to_vector() -> None:
+    """Metric-less queries (text-only values) must fan out to vector retrieval."""
+    out = decompose_query("What portion of the estimate was used for equipment?")
+    tools = {t.target_tool for t in out.sub_tasks}
+    assert "vector_retrieval" in tools
+    assert "graph_retrieval" in tools
+
+
+def test_decomposer_yoy_without_metric_adds_narrative_backup() -> None:
+    """YoY queries without a tabular metric hint schedule narrative backup."""
+    out = decompose_query(
+        "What was the change in the disclosed value from 2002 to 2003?",
+        company="AAPL",
+    )
+    tools = [t.target_tool for t in out.sub_tasks]
+    assert tools.count("graph_retrieval") == 2
+    assert "vector_retrieval" in tools
+
+
+def test_decomposer_clean_single_hop_stays_single() -> None:
+    """Strong tabular-anchor query must NOT trigger extra vector fan-out."""
+    out = decompose_query("What was Apple net sales in 2002?", company="AAPL")
+    assert len(out.sub_tasks) == 1
+    assert out.sub_tasks[0].target_tool == "graph_retrieval"

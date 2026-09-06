@@ -34,7 +34,6 @@ def retrieve_graph_node(state: AgentStateV1) -> dict[str, Any]:
                 record_id=payload.get("record_id"),
             )
             result = graph_retrieval_tool(query_input)
-            call["status"] = "COMPLETED" if result.success else "FAILED"
             executed_results.append({
                 "task_id": call.get("task_id"),
                 "tool_name": "graph_retrieval",
@@ -45,7 +44,9 @@ def retrieve_graph_node(state: AgentStateV1) -> dict[str, Any]:
             count = result.data.total_found if result.data else 0
             scratchpad_logs.append(f"[Graph Retrieval] Fetched {count} records for year={payload.get('year')}, metric={payload.get('metric_name')}.")
         else:
-            remaining_calls.append(call)
+            remaining_calls.append(dict(call))
+    # Executed calls leave the queue; no need to re-add their updated copies.
+    # (Their completion is recorded in tool_results; re-adding would double-count.)
 
     return {
         "tool_calls": remaining_calls,
@@ -68,7 +69,6 @@ def retrieve_vector_node(state: AgentStateV1) -> dict[str, Any]:
                 top_k=payload.get("top_k", 5),
             )
             result = vector_retrieval_tool(query_input)
-            call["status"] = "COMPLETED" if result.success else "FAILED"
             executed_results.append({
                 "task_id": call.get("task_id"),
                 "tool_name": "vector_retrieval",
@@ -79,7 +79,7 @@ def retrieve_vector_node(state: AgentStateV1) -> dict[str, Any]:
             count = result.data.total_found if result.data else 0
             scratchpad_logs.append(f"[Vector Retrieval] Fetched {count} narrative chunks for query: '{payload.get('query_text')}'.")
         else:
-            remaining_calls.append(call)
+            remaining_calls.append(dict(call))
 
     return {
         "tool_calls": remaining_calls,
@@ -89,7 +89,11 @@ def retrieve_vector_node(state: AgentStateV1) -> dict[str, Any]:
 
 
 def fuse_context_node(state: AgentStateV1) -> dict[str, Any]:
-    """Fuses multi-modal graph records and text chunks using Reciprocal Rank Fusion."""
+    """Fuses multi-modal graph records and text chunks using Reciprocal Rank Fusion.
+
+    Persists the fused context into scratchpad so the synthesizer (and Phase 8
+    HITL reviewers) can see exactly which evidence blocks were selected.
+    """
     graph_records: list[GraphMetricRecord] = []
     vector_chunks: list[VectorChunkRecord] = []
 
@@ -111,11 +115,15 @@ def fuse_context_node(state: AgentStateV1) -> dict[str, Any]:
     )
     fusion_result = context_fusion_tool(fusion_input)
 
+    fused_preview = ""
+    if fusion_result.data and fusion_result.data.formatted_context:
+        fused_preview = fusion_result.data.formatted_context[:600]
+
     log_entry = (
         f"[Context Fusion] RRF fused {fusion_result.data.total_input_items if fusion_result.data else 0} "
         f"items into {fusion_result.data.retained_items if fusion_result.data else 0} token-budgeted blocks."
     )
 
     return {
-        "scratchpad": [log_entry],
+        "scratchpad": [log_entry, f"[Fused Context Preview]\n{fused_preview}"],
     }

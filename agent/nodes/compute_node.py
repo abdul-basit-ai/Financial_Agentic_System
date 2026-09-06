@@ -48,7 +48,6 @@ def compute_node(state: AgentStateV1) -> dict[str, Any]:
             concrete_expr = _resolve_dynamic_expression(raw_expr, state.tool_results)
 
             result = safe_math_tool(SafeMathInput(expression=concrete_expr))
-            call["status"] = "COMPLETED" if result.success else "FAILED"
             executed_results.append({
                 "task_id": call.get("task_id"),
                 "tool_name": "safe_math",
@@ -59,7 +58,7 @@ def compute_node(state: AgentStateV1) -> dict[str, Any]:
             val = result.data.formatted if result.data else "ERROR"
             scratchpad_logs.append(f"[Safe Math] Evaluated '{concrete_expr}' -> Result: {val}")
         else:
-            remaining_calls.append(call)
+            remaining_calls.append(dict(call))
 
     return {
         "tool_calls": remaining_calls,

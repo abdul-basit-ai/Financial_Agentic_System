@@ -209,6 +209,8 @@ financial-agent/
 
 **Goal:** A single `StateGraph` over `AgentState`, wired to the Phase 4 tools and Phase 5 memory. This is the one and only orchestration mechanism in the system — Phases 7-9 extend it rather than replace it.
 
+> **ADR — Text-vs-Graph evidence routing (implemented).** FinQA gold evidence lives in BOTH table cells and pre/post narrative text (`gold_inds` references `table_row` and `text` indices). The graph tool only covers tabular rows; a pure graph lookup silently misses text-only values. Decision: the Phase 4 decomposer's `_needs_narrative_evidence()` heuristic fans every plan out to `vector_retrieval` as narrative backup when (a) the query has explanation/disclosure signal words, or (b) no tabular metric keyword is anchored. Explanation queries already schedule both; YoY queries without a metric hint now add a narrative backup task. The synthesizer treats only non-empty payloads as evidence, so text-only answers surface via the vector path rather than fabricating figures.
+
 - [ ] Define LangGraph nodes: `plan`, `retrieve_graph`, `retrieve_vector`, `fuse_context`, `compute`, `synthesize_answer`, `write_memory`
 - [ ] Define conditional edges (e.g. route to `compute` only if the plan requires arithmetic)
 - [ ] Wire Phase 4 tools into their corresponding nodes

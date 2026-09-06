@@ -49,6 +49,34 @@ def _extract_metric_hint(text: str) -> str | None:
     return None
 
 
+def _needs_narrative_evidence(query: str, metric_hint: str | None) -> bool:
+    """Text-vs-graph routing heuristic.
+
+    FinQA values live in tables AND in pre/post narrative text (gold indices
+    reference both). The graph tool only covers tabular row values, so queries
+    with these signals must ALSO schedule vector retrieval or they will
+    silently miss text-only evidence.
+    """
+    q = query.lower()
+    text_signal_words = [
+        "why", "reason", "drive", "driven", "cause", "explain", "explanation",
+        "discuss", "describe", "according to", "context", "background",
+    ]
+    numeric_text_words = [
+        "stated", "reported", "mentioned", "disclosed", "noted in", "per the filing",
+        "as disclosed", "estimate", "expect", "anticipate", "guidance",
+    ]
+    if any(w in q for w in text_signal_words):
+        return True
+    if any(w in q for w in numeric_text_words):
+        return True
+    # Metric without a strong tabular anchor (e.g. "percent of", "amount of X
+    # used for") — likely computed from text-extracted values.
+    if metric_hint is None:
+        return True
+    return False
+
+
 def decompose_query(query: str, company: str = "UNKNOWN") -> DecompositionOutput:
     clean_q = query.strip()
     years = [int(y) for y in YEAR_RE.findall(clean_q)]
@@ -62,7 +90,10 @@ def decompose_query(query: str, company: str = "UNKNOWN") -> DecompositionOutput
     if len(years_sorted) >= 2 and any(w in clean_q.lower() for w in ["change", "difference", "increase", "decrease", "growth"]):
         is_multi_hop = True
         y1, y2 = years_sorted[0], years_sorted[1]
+        needs_narrative = _needs_narrative_evidence(clean_q, metric_hint)
         plan = f"Retrieve {metric_hint or 'metric'} for {y1} and {y2} in parallel, then calculate difference/growth."
+        if needs_narrative:
+            plan += " Narrative evidence scheduled as backup for text-only values."
 
         t1 = SubTask(
             task_id="task_1",
@@ -84,6 +115,14 @@ def decompose_query(query: str, company: str = "UNKNOWN") -> DecompositionOutput
             dependencies=["task_1", "task_2"],
         )
         sub_tasks.extend([t1, t2, t3])
+        if needs_narrative:
+            t4 = SubTask(
+                task_id="task_4",
+                target_tool="vector_retrieval",
+                query_payload={"query_text": clean_q, "top_k": 5},
+                dependencies=[],
+            )
+            sub_tasks.append(t4)
 
     # Pattern B: Explanation query requiring narrative and tabular evidence
     elif any(w in clean_q.lower() for w in ["why", "reason", "drive", "driven", "cause"]):
@@ -106,7 +145,12 @@ def decompose_query(query: str, company: str = "UNKNOWN") -> DecompositionOutput
 
     # Default: Single-hop graph lookup
     else:
-        plan = "Direct single-hop graph query."
+        needs_narrative = _needs_narrative_evidence(clean_q, metric_hint)
+        plan = (
+            "Direct single-hop graph query plus narrative context lookup."
+            if needs_narrative
+            else "Direct single-hop graph query."
+        )
         t1 = SubTask(
             task_id="task_1",
             target_tool="graph_retrieval",
@@ -114,6 +158,16 @@ def decompose_query(query: str, company: str = "UNKNOWN") -> DecompositionOutput
             dependencies=[],
         )
         sub_tasks.append(t1)
+        if needs_narrative:
+            # FinQA gold evidence frequently lives in pre/post text; a pure
+            # graph lookup would silently miss it. Fan out to the vector store.
+            t2 = SubTask(
+                task_id="task_2",
+                target_tool="vector_retrieval",
+                query_payload={"query_text": clean_q, "top_k": 5},
+                dependencies=[],
+            )
+            sub_tasks.append(t2)
 
     return DecompositionOutput(
         original_query=clean_q,
