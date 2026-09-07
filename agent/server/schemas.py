@@ -53,7 +53,10 @@ class JobStatusResponse(BaseModel):
 class HITLApprovalRequest(BaseModel):
     """Analyst review decision payload to resume an interrupted state machine."""
 
-    action: Literal["APPROVE", "REJECT", "OVERRIDE"] = Field(
+    # NOTE: the graph's hitl_gate understands APPROVE / REJECT / EDIT (an EDIT
+    # must carry overrides.tool_calls). "OVERRIDE" here is a UI-facing alias
+    # that must map to EDIT, otherwise the gate fails closed to REJECT.
+    action: Literal["APPROVE", "REJECT", "EDIT", "OVERRIDE"] = Field(
         ..., description="Compliance review action"
     )
     analyst_id: str = Field(default="analyst_system", description="Reviewer identifier")
@@ -73,6 +76,28 @@ class ThreadStateResponse(BaseModel):
     hitl_status: str
     state_values: dict[str, Any]
     interrupt_payload: Any | None = None
+
+
+class ApprovalItem(BaseModel):
+    """Structured record for a thread currently suspended awaiting HITL review."""
+
+    thread_id: str
+    trace_id: str = "unknown"
+    input_query: str = ""
+    company_identifier: str | None = None
+    hitl_status: str = "PENDING"
+    paused_nodes: list[str] = Field(default_factory=list)
+    trigger_reasons: list[str] = Field(default_factory=list)
+    pending_tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    scratchpad_summary: list[str] = Field(default_factory=list)
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+
+class ApprovalListResponse(BaseModel):
+    """Queue of active approval requests for the compliance interface."""
+
+    total_pending: int
+    items: list[ApprovalItem]
 
 
 class SSEEvent(BaseModel):

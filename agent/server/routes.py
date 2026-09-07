@@ -16,6 +16,8 @@ except ImportError:
     Command = None
 
 from agent.server.schemas import (
+    ApprovalItem,
+    ApprovalListResponse,
     AsyncJobResponse,
     HITLApprovalRequest,
     JobStatusResponse,
@@ -27,8 +29,9 @@ from agent.state.schema import AgentStateV1
 
 router = APIRouter(prefix="/api/v1", tags=["Financial Reasoning Agent"])
 
-# In-memory job repository for decoupled execution
+# In-memory repositories for tracking jobs and active thread identifiers
 JOB_STORE: dict[str, dict[str, Any]] = {}
+ACTIVE_THREADS: dict[str, dict[str, Any]] = {}
 
 
 async def _execute_background_job(
@@ -43,7 +46,6 @@ async def _execute_background_job(
     start_time = time.perf_counter()
 
     try:
-        # LangGraph invoke executed in worker thread
         final_state = await asyncio.to_thread(
             agent.invoke,
             initial_state.model_dump(),
@@ -51,7 +53,6 @@ async def _execute_background_job(
         )
         duration_ms = (time.perf_counter() - start_time) * 1000.0
 
-        # Check if the thread paused in an HITL gate
         curr_state = agent.get_state(config)
         is_paused = bool(curr_state and curr_state.next)
 
@@ -92,6 +93,13 @@ async def query_stream_endpoint(request: Request, body: QueryRequest) -> Streami
             "thread_id": body.thread_id,
             "tenant_id": body.tenant_id,
         }
+    }
+
+    # Register active thread for state and approval inspection
+    ACTIVE_THREADS[body.thread_id] = {
+        "input_query": body.query,
+        "company_identifier": body.company_identifier,
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
 
     return StreamingResponse(
@@ -137,6 +145,12 @@ async def query_async_endpoint(
         }
     }
 
+    ACTIVE_THREADS[body.thread_id] = {
+        "input_query": body.query,
+        "company_identifier": body.company_identifier,
+        "created_at": now_str,
+    }
+
     JOB_STORE[job_id] = {
         "job_id": job_id,
         "thread_id": body.thread_id,
@@ -180,8 +194,56 @@ async def get_job_status_endpoint(job_id: str) -> JobStatusResponse:
 
 
 # =====================================================================
-# 3. Thread State Inspection & HITL Resumption Endpoints
+# 3. Governance: HITL Approvals Queue & Resumption Endpoints
 # =====================================================================
+
+
+@router.get(
+    "/approvals",
+    response_model=ApprovalListResponse,
+    summary="List all execution threads currently paused awaiting HITL review",
+)
+async def list_approvals_endpoint(request: Request) -> ApprovalListResponse:
+    agent = request.app.state.agent
+    approval_items: list[ApprovalItem] = []
+
+    for thread_id, meta in list(ACTIVE_THREADS.items()):
+        config = {"configurable": {"thread_id": thread_id}}
+        try:
+            snapshot = agent.get_state(config)
+        except Exception:
+            continue
+
+        if not snapshot or not snapshot.values:
+            continue
+
+        is_paused = bool(snapshot.next)
+        hitl_status = snapshot.values.get("hitl_status", "NONE")
+
+        # Select threads paused on interrupts or marked with PENDING HITL status
+        if is_paused or hitl_status == "PENDING":
+            scratchpad = snapshot.values.get("scratchpad", [])
+            trigger_reasons = [line for line in scratchpad if line.strip().startswith("• [")]
+
+            approval_items.append(
+                ApprovalItem(
+                    thread_id=thread_id,
+                    trace_id=snapshot.values.get("trace_id", "unknown"),
+                    input_query=meta.get("input_query", snapshot.values.get("input", "")),
+                    company_identifier=meta.get("company_identifier"),
+                    hitl_status=hitl_status,
+                    paused_nodes=list(snapshot.next) if snapshot.next else [],
+                    trigger_reasons=trigger_reasons,
+                    pending_tool_calls=snapshot.values.get("tool_calls", []),
+                    scratchpad_summary=scratchpad[-5:] if scratchpad else [],
+                    created_at=meta.get("created_at", datetime.now(timezone.utc).isoformat()),
+                )
+            )
+
+    return ApprovalListResponse(
+        total_pending=len(approval_items),
+        items=approval_items,
+    )
 
 
 @router.get(
@@ -244,13 +306,18 @@ async def resume_thread_endpoint(
         "overrides": body.overrides,
     }
 
+    # Map the UI-facing alias "OVERRIDE" to the graph's "EDIT" verb. Without
+    # this, an OVERRIDE submission fails closed to REJECT in hitl_gate.
+    if decision_payload["action"] == "OVERRIDE":
+        decision_payload["action"] = "EDIT"
+        # UI OVERRIDE without tool_calls structure would be dropped by the
+        # gate; pass overrides through untouched so the analyst's edits land.
+
     try:
-        # Attempt modern LangGraph Command resumption first
         if Command is not None:
             resume_cmd = Command(resume=decision_payload)
             resumed_output = await asyncio.to_thread(agent.invoke, resume_cmd, config=config)
         else:
-            # Fallback state update & resumption
             agent.update_state(config, {"hitl_status": body.action})
             resumed_output = await asyncio.to_thread(agent.invoke, None, config=config)
 
