@@ -65,6 +65,30 @@ def compute_node(state: AgentStateV1) -> dict[str, Any]:
                 raw_expr, state.tool_results, state.sub_task_results
             )
 
+            # If dynamic references remain unresolved, the dependency tasks
+            # produced no usable values (e.g. retrieval found nothing). Fail
+            # THIS task cleanly instead of calling safe_math and crashing with
+            # a confusing ASTSecurityError on 'task_2.amount'.
+            unresolved = re.findall(r"\btask_\d+\.amount\b", concrete_expr)
+            if unresolved:
+                error_msg = (
+                    f"Cannot evaluate expression: no numeric data for "
+                    f"{', '.join(sorted(set(unresolved)))} (dependency retrieval "
+                    f"returned no records)."
+                )
+                task_id = call.get("task_id", "task_math")
+                executed_results.append({
+                    "task_id": task_id,
+                    "tool_name": "safe_math",
+                    "success": False,
+                    "data": None,
+                    "error": error_msg,
+                })
+                scratchpad_logs.append(
+                    f"[Safe Math] Skipped '{raw_expr}' -> {error_msg}"
+                )
+                continue
+
             result = safe_math_tool(SafeMathInput(expression=concrete_expr))
             task_id = call.get("task_id", "task_math")
 
