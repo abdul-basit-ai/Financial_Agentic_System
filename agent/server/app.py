@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -38,12 +39,18 @@ def create_app() -> FastAPI:
     )
 
     # 1. CORS Configuration
+    # Explicit origin allowlist (Streamlit UI). allow_credentials=True with
+    # wildcard origins is an invalid combination browsers reject, and wildcard
+    # CORS is unsafe for a gateway that will carry auth tokens (Phase 13).
+    allowed_origins = os.getenv(
+        "CORS_ALLOWED_ORIGINS", "http://localhost:8501,http://localhost:3000"
+    ).split(",")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=[o.strip() for o in allowed_origins if o.strip()],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Trace-Id"],
     )
 
     # 2. Distributed Tracing & Request ID Middleware
