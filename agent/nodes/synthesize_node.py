@@ -50,6 +50,62 @@ def synthesize_node(state: AgentStateV1) -> dict[str, Any]:
     graph_results = [r for r in graph_results if _has_payload(r)]
     vector_results = [r for r in vector_results if _has_payload(r)]
 
+    # Relevance filter: retrieved evidence must share signal with the question.
+    # Without this, unrelated rows (e.g. leftover test fixtures) get parroted
+    # as "verified" citations for a question they don't answer.
+    def _question_terms(text: str) -> set[str]:
+        stop = {
+            "what", "was", "the", "in", "of", "for", "and", "a", "an", "to",
+            "is", "were", "on", "by", "with", "from", "at", "did", "how",
+            "much", "many", "that", "this", "company", "fiscal", "year",
+        }
+        return {
+            w for w in str(text).lower().replace("%", " ").replace(",", " ").split()
+            if len(w) > 2 and w not in stop and not w.isdigit()
+        }
+
+    q_terms = _question_terms(state.input)
+
+    def _relevance_hits(evidence_text: str) -> int:
+        ev_terms = _question_terms(evidence_text)
+        return len(q_terms & ev_terms)
+
+    # Graph records: keep only rows whose label overlaps the question
+    # (e.g. question mentions "goodwill" -> keep "goodwill" rows), unless the
+    # question has no usable terms at all.
+    def _filter_graph_records(r: dict[str, Any]) -> dict[str, Any]:
+        data = r.get("data") or {}
+        records = data.get("records", [])
+        if not q_terms:
+            return r
+        relevant = [
+            rec for rec in records
+            if _relevance_hits(f"{rec.get('row_label', '')} {rec.get('company', '')}") >= 1
+        ]
+        filtered = dict(r)
+        filtered["data"] = {**data, "records": relevant}
+        return filtered
+
+    # Vector chunks: similarity threshold already applied at retrieval; here
+    # require at least one question-term overlap in the chunk text.
+    def _filter_vector_chunks(r: dict[str, Any]) -> dict[str, Any]:
+        data = r.get("data") or {}
+        chunks = data.get("chunks", [])
+        if not q_terms:
+            return r
+        relevant = [
+            ch for ch in chunks
+            if _relevance_hits(ch.get("text_content", "")) >= 1
+        ]
+        filtered = dict(r)
+        filtered["data"] = {**data, "chunks": relevant}
+        return filtered
+
+    graph_results = [_filter_graph_records(r) for r in graph_results]
+    graph_results = [r for r in graph_results if r["data"].get("records")]
+    vector_results = [_filter_vector_chunks(r) for r in vector_results]
+    vector_results = [r for r in vector_results if r["data"].get("chunks")]
+
     has_sufficient_evidence = bool(math_results or graph_results or vector_results)
     failed_results = [r for r in state.tool_results if not r.get("success")]
 

@@ -72,6 +72,21 @@ class GraphRetrievalTool:
         year: int | None = None,
         record_id: str | None = None,
     ) -> GraphQueryOutput:
+        # Anchor requirement: an unanchored query (UNKNOWN company + no metric
+        # + no year + no record_id) matches half the graph via fuzzy CONTAINS
+        # and returns arbitrary rows that pollute downstream synthesis.
+        if (
+            company_identifier.strip().upper() in {"UNKNOWN", "N/A", ""}
+            and metric_name is None
+            and year is None
+            and record_id is None
+        ):
+            return GraphQueryOutput(
+                company_identifier=company_identifier,
+                records=[],
+                total_found=0,
+            )
+
         driver = self._get_driver()
 
         slug_comp = company_identifier.strip().lower()

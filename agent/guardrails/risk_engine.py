@@ -102,6 +102,14 @@ class FinancialRiskEngine:
         tool_results = state_dict.get("tool_results", [])
         sub_task_results = state_dict.get("sub_task_results", {})
 
+        # Collect amounts from graph records. Feed Benford DISTINCT
+        # observations only: (amount, normalized_amount) pairs are the same
+        # underlying figure counted twice, and duplicated retrieval rows would
+        # otherwise fabricate a non-Benford distribution out of repeated
+        # identical digits (observed: chi2=88 from 20 copies of one value).
+        benford_pool: list[float] = []
+        seen_observations: set[tuple[Any, ...]] = set()
+
         # Collect amounts from graph records
         for res in tool_results:
             data = res.get("data")
@@ -118,6 +126,17 @@ class FinancialRiskEngine:
                 target_val = norm_amt if norm_amt is not None else amt
                 if target_val is not None:
                     extracted_numbers.append(float(target_val))
+
+                # Benford pool: distinct (row, amount, normalized) observations
+                # only — dedupe exact duplicates and never feed amount AND
+                # normalized_amount for the same record (same figure, counted
+                # twice, fabricates non-Benford distributions).
+                for candidate in (amt, norm_amt):
+                    if candidate is not None:
+                        key = (r.get("row_label"), round(float(candidate), 6))
+                        if key not in seen_observations:
+                            seen_observations.add(key)
+                            benford_pool.append(float(candidate))
 
                 # Check Extreme Margins (> 100% or < -100%)
                 if any(m in row_label for m in ["margin", "rate", "percentage"]) and amt is not None:
@@ -210,8 +229,8 @@ class FinancialRiskEngine:
                         )
                     )
 
-        # 3. Benford's Law Data Integrity Check
-        benford_ok, chi_sq = verify_benford_law_conformity(extracted_numbers)
+        # 3. Benford's Law Data Integrity Check (distinct observations only)
+        benford_ok, chi_sq = verify_benford_law_conformity(benford_pool)
         if not benford_ok:
             reasons.append(
                 RiskTriggerReason(
