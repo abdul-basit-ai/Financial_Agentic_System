@@ -95,3 +95,26 @@ class AgentStateV1(BaseModel):
         except ValueError as exc:
             raise ValueError(f"trace_id must be a valid UUIDv4 string: {v}") from exc
         return v
+
+
+# =====================================================================
+# Schema Versioning — V1 → V2 Migration Note
+# =====================================================================
+# AgentStateV1 is the frozen contract for Phases 6-14 (all graph nodes read/
+# write it; the Redis checkpointer serializes model_dump_json of it).
+#
+# V2 EXTENSION RULES (how V2 would evolve without breaking checkpoints):
+# 1. ADDITIVE ONLY within a release: new fields must be optional with defaults
+#    (e.g. `cost_budget_usd: float = Field(default=0.0)`) so V1-serialized
+#    checkpoint payloads validate under V2 (pydantic ignores absent keys).
+# 2. NEVER rename or retype existing fields; deprecate by adding a parallel
+#    field and a validator shim (old -> new) for one release.
+# 3. Reducers are part of the contract: a field's Annotated reducer must keep
+#    its associativity/identity semantics or parallel fan-in (Phase 7) breaks.
+# 4. Changing a field's shape requires a checkpoint re-write step: bump
+#    GRAPH_VERSION in agent/nodes/plan_node.py, write a migration in
+#    agent/state/migrations.py that loads old JSON -> transforms -> saves,
+#    and invalidate (do not silently drop) stale threads.
+# 5. hitl_status / risk_evaluated are governance state: any V2 change must be
+#    re-reviewed by the Phase 8 pause/resume tests and the audit ledger.
+# =====================================================================

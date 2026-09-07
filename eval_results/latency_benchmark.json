@@ -1,0 +1,19 @@
+{
+  "multi_hop_query": "What was the change in Apple net sales from 2002 to 2003?",
+  "single_hop_query": "What was Apple net sales in 2002?",
+  "runs_per_query": 3,
+  "multi_hop": {
+    "wall_ms_mean": 1841.84,
+    "wall_ms_stdev": 1123.84,
+    "mean_tool_calls": 3,
+    "mean_fan_out_retrievals": 2
+  },
+  "single_hop": {
+    "wall_ms_mean": 1124.27,
+    "wall_ms_stdev": 69.27,
+    "mean_tool_calls": 1,
+    "mean_fan_out_retrievals": 1
+  },
+  "naive_sequential_estimate_ms": 3683.68,
+  "note": "naive_sequential_estimate = parallel wall x 2 (two fan-out rounds serialized); actual speedup depends on tool latency distribution"
+}
