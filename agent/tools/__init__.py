@@ -37,6 +37,10 @@ from agent.tools.safe_math import (
     evaluate_math,
     safe_math_tool,
 )
+from agent.tools.sandbox_tool import (
+    code_sandbox_tool,
+    execute_sandboxed_code,
+)
 from agent.tools.vector_tool import (
     VectorChunkRecord,
     VectorRetrievalTool,
@@ -79,4 +83,6 @@ __all__ = [
     "MemoryQueryOutput",
     "MemoryRetrievalTool",
     "memory_retrieval_tool",
+    "code_sandbox_tool",
+    "execute_sandboxed_code",
 ]
