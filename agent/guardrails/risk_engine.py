@@ -18,7 +18,9 @@ BENFORD_EXPECTED: dict[int, float] = {
 CHI_SQUARE_CRITICAL_99 = 20.09
 MATERIAL_DOLLAR_THRESHOLD = 100_000_000.0  # $100M in raw table units
 MIN_VECTOR_SIMILARITY_THRESHOLD = 0.65
-MAD_Z_SCORE_THRESHOLD = 3.5
+MAD_Z_SCORE_THRESHOLD = 10.0  # Tight enough for true outliers (z>20 for a 3.5x
+# magnitude deviation in a same-magnitude cluster), loose enough that normal
+# financial variance within one order of magnitude (z typically < 5) passes.
 
 
 class RiskTriggerReason(BaseModel):
@@ -144,17 +146,24 @@ class FinancialRiskEngine:
                         )
                     )
 
-            # Vector chunk confidence checks
+            # Vector chunk confidence checks — one signal per retrieval call,
+            # not one per chunk: a single retrieval returning 5 mediocre
+            # chunks is one confidence observation, not five escalations.
             chunks = data.get("chunks", [])
-            for c in chunks:
-                sim = c.get("similarity_score")
-                if sim is not None and float(sim) < MIN_VECTOR_SIMILARITY_THRESHOLD:
+            chunk_sims = [
+                float(c["similarity_score"])
+                for c in chunks
+                if c.get("similarity_score") is not None
+            ]
+            if chunk_sims:
+                worst_sim = min(chunk_sims)
+                if worst_sim < MIN_VECTOR_SIMILARITY_THRESHOLD:
                     reasons.append(
                         RiskTriggerReason(
                             category="CONFIDENCE",
                             severity="MEDIUM",
-                            message=f"Low semantic confidence ({sim:.4f}) on retrieved narrative section.",
-                            metric_value=float(sim),
+                            message=f"Low semantic confidence (worst {worst_sim:.4f} of {len(chunk_sims)} chunks) on retrieved narrative section.",
+                            metric_value=worst_sim,
                         )
                     )
 
@@ -173,16 +182,30 @@ class FinancialRiskEngine:
                         )
                     )
 
-        # 2. Statistical Outlier Detection (MAD)
-        if len(extracted_numbers) >= 4:
-            z_scores = compute_modified_z_scores(extracted_numbers)
-            for val, z in zip(extracted_numbers, z_scores):
+        # 2. Statistical Outlier Detection (MAD) — within same-magnitude clusters
+        # Financial filings legitimately mix scales (thousands/millions/billions
+        # in one table). Raw MAD across mixed magnitudes flags every small line
+        # next to a large one (z > 100 observed), which is noise, not anomaly.
+        # Cluster values by order of magnitude and detect outliers WITHIN a
+        # cluster (needs >= 4 comparable values to be meaningful).
+        magnitude_clusters: dict[int, list[float]] = {}
+        for num in extracted_numbers:
+            if num == 0.0:
+                continue
+            cluster_key = int(math.floor(math.log10(abs(num))))
+            magnitude_clusters.setdefault(cluster_key, []).append(num)
+
+        for cluster_values in magnitude_clusters.values():
+            if len(cluster_values) < 4:
+                continue
+            z_scores = compute_modified_z_scores(cluster_values)
+            for val, z in zip(cluster_values, z_scores):
                 if abs(z) >= MAD_Z_SCORE_THRESHOLD:
                     reasons.append(
                         RiskTriggerReason(
                             category="ANOMALY",
                             severity="HIGH",
-                            message=f"Statistical outlier detected (Modified Z-Score: {z:.2f}) on value: {val:,.2f}",
+                            message=f"Statistical outlier within same-magnitude cluster (Modified Z-Score: {z:.2f}) on value: {val:,.2f}",
                             metric_value=val,
                         )
                     )
@@ -200,13 +223,22 @@ class FinancialRiskEngine:
             )
 
         # 4. Composite Risk Score Formulation
+        # HIGH/CRITICAL triggers escalate immediately; MEDIUM/LOW reasons are
+        # informational UNLESS they accumulate heavily. A couple of mediocre
+        # vector matches (2x MEDIUM = 0.7) hitting the composite ceiling would
+        # escalate nearly every generic query -> HITL alarm fatigue.
         severity_weights = {"LOW": 0.1, "MEDIUM": 0.35, "HIGH": 0.7, "CRITICAL": 1.0}
         total_risk = 0.0
         for r in reasons:
             total_risk += severity_weights.get(r.severity, 0.2)
 
         composite_score = min(1.0, total_risk)
-        requires_hitl = any(r.severity in {"HIGH", "CRITICAL"} for r in reasons) or composite_score >= 0.7
+        has_escalation_trigger = any(
+            r.severity in {"HIGH", "CRITICAL"} for r in reasons
+        )
+        # MEDIUM-only noise requires 3+ simultaneous reasons to cross 0.7 via
+        # the composite; direct composite escalation needs >= 1.0 (saturation).
+        requires_hitl = has_escalation_trigger or composite_score >= 1.0
 
         return RiskAssessmentResult(
             requires_hitl=requires_hitl,
