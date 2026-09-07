@@ -17,11 +17,15 @@ except ImportError:
 
 
 from agent.guardrails.audit import MerkleAuditLedger
+from agent.guardrails.persistent_audit import PersistentMerkleAuditLedger
 from agent.guardrails.risk_engine import FinancialRiskEngine
 from agent.state.schema import AgentStateV1
 
-# Global in-memory audit ledger instance for active process
-AUDIT_LEDGER = MerkleAuditLedger()
+# Durable audit ledger: Merkle chain persisted to Postgres, surviving process
+# restarts (SEC 17a-4 posture). Degrades to memory-only with a loud warning
+# if the database is unreachable — audit gaps are never silent.
+AUDIT_LEDGER: MerkleAuditLedger = PersistentMerkleAuditLedger()
+AUDIT_LEDGER.init_schema()
 
 
 def eval_financial_risk_node(state: AgentStateV1) -> dict[str, Any]:
