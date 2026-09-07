@@ -17,6 +17,7 @@ EXPECTED_TOOLS = {
     "vector_retrieval",
     "context_fusion",
     "query_decomposition",
+    "code_interpreter",
 }
 
 

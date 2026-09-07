@@ -12,6 +12,7 @@ import os
 from datetime import UTC, datetime
 from typing import Any
 
+from agent.sandbox.protocol import SandboxExecutionInput, SandboxOutput
 from agent.tools.decomposer import DecompositionInput, DecompositionOutput
 from agent.tools.fusion_tool import ContextFusionInput, ContextFusionOutput
 from agent.tools.graph_tool import GraphQueryInput, GraphQueryOutput
@@ -40,6 +41,10 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "query_decomposition": {
         "input": DecompositionInput.model_json_schema(),
         "output": DecompositionOutput.model_json_schema(),
+    },
+    "code_interpreter": {
+        "input": SandboxExecutionInput.model_json_schema(),
+        "output": SandboxOutput.model_json_schema(),
     },
 }
 

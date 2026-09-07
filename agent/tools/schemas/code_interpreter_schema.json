@@ -1,0 +1,141 @@
+{
+  "tool": "code_interpreter",
+  "generated_at_utc": "2026-09-07T10:10:33.136971+00:00",
+  "input": {
+    "description": "Input payload for sandbox script execution.",
+    "properties": {
+      "code": {
+        "description": "Python source code to execute in the sandbox",
+        "title": "Code",
+        "type": "string"
+      },
+      "input_variables": {
+        "additionalProperties": true,
+        "description": "Structured variables passed into the script via input_data.json",
+        "title": "Input Variables",
+        "type": "object"
+      },
+      "timeout_seconds": {
+        "default": 10.0,
+        "description": "Maximum execution wall-clock time before pre-emptive SIGKILL",
+        "maximum": 60.0,
+        "minimum": 1.0,
+        "title": "Timeout Seconds",
+        "type": "number"
+      },
+      "memory_limit_mb": {
+        "default": 512,
+        "description": "Memory ceiling in megabytes",
+        "maximum": 2048,
+        "minimum": 64,
+        "title": "Memory Limit Mb",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "code"
+    ],
+    "title": "SandboxExecutionInput",
+    "type": "object"
+  },
+  "output": {
+    "$defs": {
+      "ArtifactManifest": {
+        "description": "Metadata for generated file artifacts (e.g. CSVs, plots, matrices).",
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "data_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data Base64"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type",
+          "size_bytes"
+        ],
+        "title": "ArtifactManifest",
+        "type": "object"
+      }
+    },
+    "description": "Execution telemetry and output payload from the sandbox.",
+    "properties": {
+      "stdout": {
+        "default": "",
+        "description": "Captured standard output",
+        "title": "Stdout",
+        "type": "string"
+      },
+      "stderr": {
+        "default": "",
+        "description": "Captured standard error",
+        "title": "Stderr",
+        "type": "string"
+      },
+      "exit_code": {
+        "default": 0,
+        "description": "Process termination return code",
+        "title": "Exit Code",
+        "type": "integer"
+      },
+      "execution_time_ms": {
+        "default": 0.0,
+        "description": "Measured wall-clock latency",
+        "title": "Execution Time Ms",
+        "type": "number"
+      },
+      "parsed_result": {
+        "anyOf": [
+          {},
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Parsed JSON payload if stdout ends with a valid JSON document",
+        "title": "Parsed Result"
+      },
+      "artifacts": {
+        "description": "Output files generated in the scratch space",
+        "items": {
+          "$ref": "#/$defs/ArtifactManifest"
+        },
+        "title": "Artifacts",
+        "type": "array"
+      },
+      "timed_out": {
+        "default": false,
+        "description": "Whether execution was aborted by timeout",
+        "title": "Timed Out",
+        "type": "boolean"
+      },
+      "oom_killed": {
+        "default": false,
+        "description": "Whether process was terminated due to memory exhaustion",
+        "title": "Oom Killed",
+        "type": "boolean"
+      }
+    },
+    "title": "SandboxOutput",
+    "type": "object"
+  }
+}
