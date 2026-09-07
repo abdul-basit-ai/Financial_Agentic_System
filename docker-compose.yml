@@ -63,6 +63,15 @@ services:
       - ./agent:/app/agent
       - ./api:/app/api
       - ./ingestion:/app/ingestion
+    # Service-hostname overrides: .env points at localhost (host-oriented,
+    # correct for tests/local runs), but inside the compose network the stores
+    # are reachable only via their service names. environment: wins over
+    # env_file: in compose.
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - POSTGRES_HOST=pgvector
+      - REDIS_URL=redis://redis-stack:6379/0
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
 
   ui:
     build:
