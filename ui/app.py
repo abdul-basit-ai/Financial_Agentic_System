@@ -38,8 +38,6 @@ st.set_page_config(
 )
 
 CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap');
-
 :root {
   --ink: #FFFFFF;
   --panel: #F7F8FA;
@@ -55,12 +53,12 @@ CSS = """
 
 html, body, .stApp { background-color: var(--ink) !important; }
 .stApp, .stApp p, .stApp span, .stApp li {
-  font-family: Georgia, 'Times New Roman', 'Source Serif 4', serif;
+  font-family: 'Times New Roman', Times, serif !important;
   color: var(--text);
 }
 
 h1, h2, h3, h4, .app-header-title, .qcard-label, .kpi-number {
-  font-family: Georgia, 'Times New Roman', 'Source Serif 4', serif !important;
+  font-family: 'Times New Roman', Times, serif !important;
   letter-spacing: 0.005em;
   color: var(--text) !important;
 }
@@ -84,7 +82,7 @@ h1, h2, h3, h4, .app-header-title, .qcard-label, .kpi-number {
   display: flex; align-items: center; justify-content: space-between;
   padding: 1rem 1.25rem; margin-bottom: 1.25rem;
   background: var(--panel); border: 1px solid var(--line);
-  border-top: 3px solid var(--gold); border-radius: 10px;
+  border-radius: 10px;
 }
 .app-header-brand { display: flex; align-items: center; gap: 0.75rem; }
 .app-header-mark { font-size: 1.6rem; }
@@ -107,7 +105,7 @@ h1, h2, h3, h4, .app-header-title, .qcard-label, .kpi-number {
 
 .badge {
   display: inline-block; font-size: 0.72rem; padding: 0.2rem 0.55rem; border-radius: 999px;
-  border: 1px solid transparent; margin: 0.1rem 0.3rem 0.1rem 0; font-family: Georgia, 'Times New Roman', serif;
+  border: 1px solid transparent; margin: 0.1rem 0.3rem 0.1rem 0; font-family: 'Times New Roman', Times, serif;
 }
 .badge-rose  { background: rgba(226,89,107,0.12); color: var(--rose);  border-color: rgba(226,89,107,0.35); }
 .badge-amber { background: rgba(227,168,59,0.12); color: var(--amber); border-color: rgba(227,168,59,0.35); }
@@ -130,16 +128,16 @@ h1, h2, h3, h4, .app-header-title, .qcard-label, .kpi-number {
 .tl-text { color: var(--text-dim); }
 
 [data-testid="stVerticalBlockBorderWrapper"] { background: var(--panel) !important; border: 1px solid var(--line) !important; border-radius: 10px !important; }
-[data-testid="stForm"] { background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--gold); border-radius: 10px; padding: 1.25rem; }
+[data-testid="stForm"] { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem; }
 [data-testid="stExpander"] { background: var(--panel); border: 1px solid var(--line) !important; border-radius: 10px; }
 
 .stTabs [data-baseweb="tab-list"] { gap: 1.5rem; border-bottom: 1px solid var(--line); }
-.stTabs [data-baseweb="tab"] { font-family: Georgia, 'Times New Roman', serif; color: var(--text-dim); font-size: 0.95rem; padding-bottom: 0.6rem; }
+.stTabs [data-baseweb="tab"] { font-family: 'Times New Roman', Times, serif; color: var(--text-dim); font-size: 0.95rem; padding-bottom: 0.6rem; }
 .stTabs [aria-selected="true"] { color: var(--gold) !important; border-bottom: 2px solid var(--gold) !important; }
 
 .stButton > button {
   border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
-  font-family: Georgia, 'Times New Roman', serif; transition: transform 0.12s ease, border-color 0.12s ease;
+  font-family: 'Times New Roman', Times, serif; transition: transform 0.12s ease, border-color 0.12s ease;
 }
 .stButton > button:hover { border-color: var(--gold); transform: translateY(-1px); }
 .stButton > button[kind="primary"] { background: var(--gold); color: var(--ink); border: none; font-weight: 600; }
@@ -147,7 +145,7 @@ h1, h2, h3, h4, .app-header-title, .qcard-label, .kpi-number {
 
 .stTextInput input, .stTextArea textarea {
   background: var(--panel-2) !important; color: var(--text) !important; border: 1px solid var(--line) !important;
-  border-radius: 6px !important; font-family: Georgia, 'Times New Roman', serif !important;
+  border-radius: 6px !important; font-family: 'Times New Roman', Times, serif !important;
 }
 
 div[role="radiogroup"] { gap: 0.5rem; }
