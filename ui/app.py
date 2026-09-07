@@ -9,12 +9,23 @@ from __future__ import annotations
 
 import html
 import json
+import sys
 import uuid
+from pathlib import Path
 
 import requests
 import streamlit as st
 
-from ui.sse_client import stream_sse_query
+# Streamlit runs this file as a standalone script with /app as CWD and ui/ as
+# the script's own directory (not a package root), so `from ui.sse_client`
+# fails with ModuleNotFoundError. Add the script's directory to sys.path and
+# import the sibling module directly — works both via `streamlit run ui/app.py`
+# from repo root and inside the container.
+_UI_DIR = Path(__file__).resolve().parent
+if str(_UI_DIR) not in sys.path:
+    sys.path.insert(0, str(_UI_DIR))
+
+from sse_client import stream_sse_query  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Page setup
@@ -27,27 +38,30 @@ st.set_page_config(
 )
 
 CSS = """
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap');
 
 :root {
-  --ink: #0E141F;
-  --panel: #161F2E;
-  --panel-2: #1C2738;
-  --line: #2A3548;
-  --text: #E7ECF5;
-  --text-dim: #8D9AB3;
-  --gold: #C9A227;
-  --teal: #46B892;
-  --amber: #E3A83B;
-  --rose: #E2596B;
+  --ink: #FFFFFF;
+  --panel: #F7F8FA;
+  --panel-2: #EEF1F5;
+  --line: #D8DDE5;
+  --text: #1A2230;
+  --text-dim: #5A6578;
+  --gold: #8A6D1D;
+  --teal: #1E7B5C;
+  --amber: #9A6A15;
+  --rose: #B03050;
 }
 
 html, body, .stApp { background-color: var(--ink) !important; }
-.stApp, .stApp p, .stApp span, .stApp li { font-family: 'IBM Plex Mono', ui-monospace, monospace; color: var(--text); }
+.stApp, .stApp p, .stApp span, .stApp li {
+  font-family: Georgia, 'Times New Roman', 'Source Serif 4', serif;
+  color: var(--text);
+}
 
 h1, h2, h3, h4, .app-header-title, .qcard-label, .kpi-number {
-  font-family: 'Space Grotesk', sans-serif !important;
-  letter-spacing: -0.01em;
+  font-family: Georgia, 'Times New Roman', 'Source Serif 4', serif !important;
+  letter-spacing: 0.005em;
   color: var(--text) !important;
 }
 
@@ -93,7 +107,7 @@ h1, h2, h3, h4, .app-header-title, .qcard-label, .kpi-number {
 
 .badge {
   display: inline-block; font-size: 0.72rem; padding: 0.2rem 0.55rem; border-radius: 999px;
-  border: 1px solid transparent; margin: 0.1rem 0.3rem 0.1rem 0; font-family: 'IBM Plex Mono', monospace;
+  border: 1px solid transparent; margin: 0.1rem 0.3rem 0.1rem 0; font-family: Georgia, 'Times New Roman', serif;
 }
 .badge-rose  { background: rgba(226,89,107,0.12); color: var(--rose);  border-color: rgba(226,89,107,0.35); }
 .badge-amber { background: rgba(227,168,59,0.12); color: var(--amber); border-color: rgba(227,168,59,0.35); }
@@ -120,12 +134,12 @@ h1, h2, h3, h4, .app-header-title, .qcard-label, .kpi-number {
 [data-testid="stExpander"] { background: var(--panel); border: 1px solid var(--line) !important; border-radius: 10px; }
 
 .stTabs [data-baseweb="tab-list"] { gap: 1.5rem; border-bottom: 1px solid var(--line); }
-.stTabs [data-baseweb="tab"] { font-family: 'Space Grotesk', sans-serif; color: var(--text-dim); font-size: 0.95rem; padding-bottom: 0.6rem; }
+.stTabs [data-baseweb="tab"] { font-family: Georgia, 'Times New Roman', serif; color: var(--text-dim); font-size: 0.95rem; padding-bottom: 0.6rem; }
 .stTabs [aria-selected="true"] { color: var(--gold) !important; border-bottom: 2px solid var(--gold) !important; }
 
 .stButton > button {
   border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
-  font-family: 'IBM Plex Mono', monospace; transition: transform 0.12s ease, border-color 0.12s ease;
+  font-family: Georgia, 'Times New Roman', serif; transition: transform 0.12s ease, border-color 0.12s ease;
 }
 .stButton > button:hover { border-color: var(--gold); transform: translateY(-1px); }
 .stButton > button[kind="primary"] { background: var(--gold); color: var(--ink); border: none; font-weight: 600; }
@@ -133,7 +147,7 @@ h1, h2, h3, h4, .app-header-title, .qcard-label, .kpi-number {
 
 .stTextInput input, .stTextArea textarea {
   background: var(--panel-2) !important; color: var(--text) !important; border: 1px solid var(--line) !important;
-  border-radius: 6px !important; font-family: 'IBM Plex Mono', monospace !important;
+  border-radius: 6px !important; font-family: Georgia, 'Times New Roman', serif !important;
 }
 
 div[role="radiogroup"] { gap: 0.5rem; }
@@ -177,8 +191,20 @@ def _backend_is_live(url: str) -> bool:
 # ---------------------------------------------------------------------------
 # Sidebar configuration
 # ---------------------------------------------------------------------------
+# Default differs by runtime: inside the API docker network the gateway is
+# reachable as http://api:8000 (127.0.0.1 inside the UI container is its own
+# loopback, NOT the gateway). When you run Streamlit locally in a browser,
+# point it at http://127.0.0.1:8000.
+import os as _os
+
+_DEFAULT_API_URL = (
+    "http://api:8000"
+    if _os.getenv("API_URL")  # set by docker-compose for the containerized UI
+    else "http://127.0.0.1:8000"
+)
+
 st.sidebar.title("Gateway config")
-api_base_url = st.sidebar.text_input("Backend API base URL", value="http://127.0.0.1:8000")
+api_base_url = st.sidebar.text_input("Backend API base URL", value=_DEFAULT_API_URL)
 st.sidebar.markdown('<hr class="side-rule" />', unsafe_allow_html=True)
 st.sidebar.markdown("**Active capabilities**")
 _capabilities = [
