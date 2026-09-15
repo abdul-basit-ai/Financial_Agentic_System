@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -180,7 +181,7 @@ def timeline_item(kind: str, label: str, text: str = "") -> str:
 @st.cache_data(ttl=15, show_spinner=False)
 def _backend_is_live(url: str) -> bool:
     try:
-        r = requests.get(url.rstrip("/") + "/", timeout=1.5)
+        r = requests.get(url.rstrip("/") + "/health", timeout=1.5)
         return r.status_code < 500
     except Exception:
         return False
@@ -193,13 +194,10 @@ def _backend_is_live(url: str) -> bool:
 # reachable as http://api:8000 (127.0.0.1 inside the UI container is its own
 # loopback, NOT the gateway). When you run Streamlit locally in a browser,
 # point it at http://127.0.0.1:8000.
-import os as _os
 
-_DEFAULT_API_URL = (
-    "http://api:8000"
-    if _os.getenv("API_URL")  # set by docker-compose for the containerized UI
-    else "http://127.0.0.1:8000"
-)
+# Use the actual API_URL value when set (docker-compose injects
+# http://api:8000); operators can override it with any reachable URL.
+_DEFAULT_API_URL = os.getenv("API_URL") or "http://127.0.0.1:8000"
 
 st.sidebar.title("Gateway config")
 api_base_url = st.sidebar.text_input("Backend API base URL", value=_DEFAULT_API_URL)
@@ -251,33 +249,36 @@ with tab_analyst:
     st.caption("Ask questions across 10-K tables, MD&A commentary, and numerical calculations.")
 
     preset_query = ""
-    preset_company = "AMZN"
+    preset_company = "ETR"
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
         with st.container(border=True):
-            st.markdown('<div class="qcard-label">Revenue trend</div>', unsafe_allow_html=True)
-            st.caption("Amazon: year-over-year revenue change, 2019 to 2020")
-            if st.button("Run this query", key="preset_amzn_rev", use_container_width=True):
-                preset_query = "What was the percentage change in Amazon operating revenue from 2019 to 2020?"
-                preset_company = "AMZN"
+            st.markdown('<div class="qcard-label">Debt maturity trend</div>', unsafe_allow_html=True)
+            st.caption("Entergy (ETR): percent change in annual long-term debt maturities, 2016 to 2017")
+            if st.button("Run this query", key="preset_etr_debt", use_container_width=True):
+                preset_query = "What is the percent change in annual long-term debt maturities from 2016 to 2017?"
+                preset_company = "ETR"
 
     with col2:
         with st.container(border=True):
-            st.markdown('<div class="qcard-label">Cloud margin drivers</div>', unsafe_allow_html=True)
-            st.caption("Microsoft: what drove commercial cloud margin expansion in 2021")
-            if st.button("Run this query", key="preset_msft_cloud", use_container_width=True):
-                preset_query = "What drove the commercial cloud margin expansion for Microsoft in 2021?"
-                preset_company = "MSFT"
+            st.markdown('<div class="qcard-label">Driver attribution</div>', unsafe_allow_html=True)
+            st.caption("Entergy (ETR): share of the 2007-2008 net revenue change due to rider revenue")
+            if st.button("Run this query", key="preset_etr_rider", use_container_width=True):
+                preset_query = "What percent of the change between net revenue in 2007 and 2008 was due to rider revenue?"
+                preset_company = "ETR"
 
     with col3:
         with st.container(border=True):
             st.markdown(
-                f'<div class="qcard-label">Outlier check {badge("Triggers review", "rose")}</div>',
+                f'<div class="qcard-label">No-data robustness {badge("Honest refusal", "rose")}</div>',
                 unsafe_allow_html=True,
             )
-            st.caption("Verify a flagged 145% operating margin and goodwill impairment")
+            st.caption(
+                "Amazon is not in this FinQA sample — the agent must report "
+                "insufficient evidence instead of fabricating figures."
+            )
             if st.button("Run this query", key="preset_outlier", use_container_width=True):
                 preset_query = "Verify the 145% operating margin and goodwill impairment for acquisition."
                 preset_company = "AMZN"
@@ -287,7 +288,7 @@ with tab_analyst:
         c1, c2 = st.columns([4, 1])
         user_query = c1.text_area(
             "Natural language financial query",
-            value=preset_query or "What was the growth in Amazon revenue from 2019 to 2020?",
+            value=preset_query or "What is the percent change in annual long-term debt maturities from 2016 to 2017?",
             height=85,
         )
         company_id = c2.text_input("Ticker / ID", value=preset_company)
@@ -459,15 +460,35 @@ with tab_compliance:
 
                     override_payload: dict = {}
                     if decision_action == "OVERRIDE":
+                        # OVERRIDE maps to the graph's EDIT verb, which only
+                        # consumes overrides.tool_calls (the replacement queue
+                        # of pending tool calls). Prefill with the thread's
+                        # actual pending calls so the analyst edits real data —
+                        # arbitrary JSON here used to be silently ignored.
+                        default_calls = item.get("pending_tool_calls") or []
                         override_raw = st.text_area(
-                            "Override variables (JSON)",
-                            value='{"corrected_amount": 14.5, "note": "Adjusted scale from % to ratio"}',
+                            "Edited tool calls (JSON list)",
+                            value=json.dumps({"tool_calls": default_calls}, indent=2, default=str),
+                            height=260,
                             key=f"override_{item['thread_id']}",
                         )
                         try:
                             override_payload = json.loads(override_raw)
+                            edited = override_payload.get("tool_calls")
+                            if not isinstance(edited, list) or not all(
+                                isinstance(c, dict) and "task_id" in c and "target_tool" in c
+                                for c in edited
+                            ):
+                                raise ValueError(
+                                    "tool_calls must be a list of objects with "
+                                    "task_id, target_tool and payload keys"
+                                )
+                        except ValueError as ve:
+                            st.error(f"Invalid override structure: {ve}")
+                            override_payload = {}
                         except Exception:
                             st.error("Invalid JSON format in override field.")
+                            override_payload = {}
 
                     if st.button(
                         f"Submit {decision_action.title()}",

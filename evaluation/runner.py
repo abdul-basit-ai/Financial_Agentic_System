@@ -5,12 +5,23 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
 from agent.graph import create_financial_agent
 from evaluation.evaluator import EvaluationRecord, EvaluationResult, FinQAEvaluator
+
+
+def safe_record_filename(record_id: str) -> str:
+    """Filesystem-safe fixture filename stem for a FinQA record id.
+
+    FinQA record ids are path-like ('V/2008/page_17.pdf-1'), so they must be
+    flattened before use as a filename. run_regression.py must use this SAME
+    function when reading fixtures back.
+    """
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", str(record_id))
 
 
 def load_finqa_records(filepath: str, limit: int | None = None) -> list[EvaluationRecord]:
@@ -28,8 +39,11 @@ def load_finqa_records(filepath: str, limit: int | None = None) -> list[Evaluati
             doc = item.get("document", {})
             reasoning = item.get("reasoning", {})
             gold_indices = reasoning.get("gold_indices") or {}
-            # Gold evidence IDs are the KEYS of gold_indices (table_row_N / pre_text etc.)
+            # Gold evidence IDs are the KEYS of gold_indices (table_row_N /
+            # pre_text etc.); the VALUES are the human-readable evidence
+            # strings retrieval is actually graded against (content overlap).
             gold_inds = [str(k) for k in gold_indices.keys()]
+            gold_evidence = [str(v) for v in gold_indices.values() if str(v).strip()]
 
             company = None
             entities = item.get("entities", {})
@@ -49,6 +63,7 @@ def load_finqa_records(filepath: str, limit: int | None = None) -> list[Evaluati
                     gold_answer=gold_answer,
                     gold_program=reasoning.get("program"),
                     gold_inds=gold_inds,
+                    gold_evidence=gold_evidence,
                     split=item.get("split", "dev"),
                 )
             )
@@ -63,10 +78,13 @@ def generate_markdown_report(summary: dict[str, Any]) -> str:
 
     return f"""# Autonomous Financial Reasoning Agent - Benchmark Report
 
-**Dataset Split:** {summary['split']}  
-**Total Samples:** {summary['total_samples']}  
-**Execution Accuracy (Acc_exe):** {summary['execution_accuracy']:.2%}  
-**Program Accuracy (Acc_prog):** {summary['program_accuracy']:.2%}  
+**Dataset Split:** {summary['split']}
+
+**Total Samples:** {summary['total_samples']}
+
+**Execution Accuracy (Acc_exe):** {summary['execution_accuracy']:.2%}
+
+**Program Accuracy (Acc_prog):** {summary['program_accuracy']:.2%}
 
 ## Information Retrieval (IR) Multi-Hop Metrics
 * **Recall@5:** {summary['mean_recall_at_5']:.2%}
@@ -90,9 +108,27 @@ def main() -> None:
     parser.add_argument("--data-file", default="data/processed/normalized/finqa_dev_normalized.jsonl")
     parser.add_argument("--output-dir", default="eval_results")
     parser.add_argument("--limit", type=int, default=50)
+    parser.add_argument(
+        "--save-states",
+        dest="save_states",
+        action="store_true",
+        default=True,
+        help="Write each record's final agent state to <output-dir>/states/ "
+        "so run_regression.py can replay it without live databases (default on).",
+    )
+    parser.add_argument(
+        "--no-save-states",
+        dest="save_states",
+        action="store_false",
+        help="Skip writing per-record state files.",
+    )
     args = parser.parse_args()
 
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
+    states_dir = Path(args.output_dir) / "states"
+    if args.save_states:
+        states_dir.mkdir(parents=True, exist_ok=True)
+
     records = load_finqa_records(args.data_file, limit=args.limit)
 
     agent_runner = create_financial_agent()
@@ -104,6 +140,21 @@ def main() -> None:
     for i, rec in enumerate(records, start=1):
         res = evaluator.evaluate_instance(rec)
         results.append(res)
+
+        if args.save_states:
+            # Persist the trajectory the agent actually took for this record
+            # so the CI regression gate can replay it deterministically.
+            config = {"configurable": {"thread_id": f"eval_{rec.record_id}"}}
+            try:
+                final_state = agent_runner.get_state(config)
+                state_values = final_state.values if final_state else {}
+            except Exception:
+                state_values = {}
+            if state_values:
+                state_path = states_dir / f"{safe_record_filename(rec.record_id)}.json"
+                with open(state_path, "w", encoding="utf-8") as f:
+                    json.dump(state_values, f, ensure_ascii=False, default=str)
+
         if i % 10 == 0 or i == len(records):
             print(f"Processed {i}/{len(records)} instances...")
 
@@ -136,17 +187,34 @@ def main() -> None:
         "taxonomy_breakdown": taxonomy_counts,
     }
 
-    # Save Artifacts
+    # Save Artifacts — summary for humans, full per-record results for the
+    # statistical regression gate (evaluation/gate.py expects the "results"
+    # list with record_id + execution_correct fields), and per-record states
+    # for the CI regression replay (run_regression.py).
     json_path = os.path.join(args.output_dir, "benchmark_summary.json")
+    results_path = os.path.join(args.output_dir, "benchmark_results.json")
     md_path = os.path.join(args.output_dir, "benchmark_report.md")
 
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
+    with open(results_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "split": summary["split"],
+                "total_samples": summary["total_samples"],
+                "execution_accuracy": summary["execution_accuracy"],
+                "results": [r.model_dump() for r in results],
+            },
+            f,
+            indent=2,
+            default=str,
+        )
+
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(generate_markdown_report(summary))
 
-    print(f"\nBenchmark Complete! Reports written to:\n  - {json_path}\n  - {md_path}")
+    print(f"\nBenchmark Complete! Reports written to:\n  - {json_path}\n  - {results_path}\n  - {md_path}")
     print(f"Final Acc_exe: {exe_acc:.2%} | Program Acc: {prog_acc:.2%}")
 
 

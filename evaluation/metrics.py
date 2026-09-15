@@ -136,9 +136,19 @@ def compute_ir_metrics(
     gold_items: list[str] | set[str],
     k: int = 5,
 ) -> dict[str, float]:
-    """Calculates multi-hop information retrieval ranking metrics."""
+    """Calculates multi-hop information retrieval ranking metrics.
+
+    ID-space variant: compares retrieved identifier strings against gold
+    identifier strings for exact membership. Only meaningful when both sides
+    share one ID vocabulary; FinQA gold_inds keys (table_N / text_M) do NOT
+    match runtime row labels or chunk keys, so prefer compute_ir_metrics_content
+    for benchmark runs over real data.
+    """
     gold_set = {g.strip().lower() for g in gold_items if g.strip()}
     if not gold_set:
+        # Records without gold evidence cannot be graded; returning the
+        # neutral 1.0 convention keeps them from dragging means down, but
+        # analysis should exclude them explicitly.
         return {"recall_at_k": 1.0, "precision_at_k": 1.0, "mrr": 1.0, "ndcg_at_k": 1.0}
 
     k_retrieved = [r.strip().lower() for r in retrieved_items[:k]]
@@ -161,6 +171,120 @@ def compute_ir_metrics(
             dcg += 1.0 / math.log2(idx + 1)
 
     idcg = sum(1.0 / math.log2(i + 1) for i in range(1, min(k, len(gold_set)) + 1))
+    ndcg = (dcg / idcg) if idcg > 0.0 else 0.0
+
+    return {
+        "recall_at_k": round(recall, 4),
+        "precision_at_k": round(precision, 4),
+        "mrr": round(mrr, 4),
+        "ndcg_at_k": round(ndcg, 4),
+    }
+
+
+# =====================================================================
+# Content-based IR metrics (real FinQA gold_inds format)
+# =====================================================================
+# FinQA gold_indices maps IDs like "table_3" / "text_34" to the HUMAN-READABLE
+# evidence string they reference ("... payments volume ( billions ) is 637 ...").
+# Runtime retrieval produces row labels + amounts and raw chunk text — a
+# different ID vocabulary entirely, so exact key comparison is always zero.
+# The content variant grades each gold evidence string by token overlap with
+# retrieved text instead.
+
+_EVIDENCE_STOPWORDS = frozenset({
+    "the", "a", "an", "of", "is", "was", "were", "in", "for", "and", "to",
+    "at", "on", "by", "with", "as", "it", "its", "s",
+})
+
+
+def evidence_tokens(text: str) -> tuple[set[str], set[str]]:
+    """Splits text into (numeric_tokens, content_word_tokens) for overlap scoring.
+
+    Numbers are significant in financial evidence (an amount match is strong
+    signal), so they are tracked separately from words.
+    """
+    raw = re.findall(r"[a-z0-9]+(?:\.[a-z0-9]+)?", str(text).lower())
+    numbers: set[str] = set()
+    words: set[str] = set()
+    for tok in raw:
+        if any(ch.isdigit() for ch in tok):
+            # Strip trailing ".0" float noise so 637.0 matches gold 637
+            numbers.add(tok.rstrip("0").rstrip(".") if "." in tok else tok)
+        elif len(tok) > 2 and tok not in _EVIDENCE_STOPWORDS:
+            words.add(tok)
+    return numbers, words
+
+
+def evidence_hit(gold_text: str, retrieved_text: str) -> bool:
+    """Whether a retrieved text covers a gold evidence string.
+
+    Rule: a hit requires sharing at least one significant token of each kind
+    the gold string carries — numbers (if any) and content words. A gold
+    string without numbers (pure narrative) needs one content-word overlap.
+    """
+    g_num, g_words = evidence_tokens(gold_text)
+    r_num, r_words = evidence_tokens(retrieved_text)
+
+    number_ok = (not g_num) or bool(g_num & r_num)
+    word_ok = (not g_words) or bool(g_words & r_words)
+    # Pure-number gold (e.g. a lone value) still needs the number itself.
+    return number_ok and word_ok and bool(g_num or (g_words & r_words))
+
+
+def compute_ir_metrics_content(
+    retrieved_texts: list[str],
+    gold_texts: list[str] | set[str],
+    k: int = 5,
+) -> dict[str, float]:
+    """IR metrics graded by content overlap instead of identifier equality.
+
+    A retrieved item is *relevant* if it covers at least one gold evidence
+    string (evidence_hit). Recall is over gold items covered by the top-k;
+    precision over top-k items that are relevant; MRR/NDCG use the first/
+    graded relevant positions.
+    """
+    gold_list = [g for g in gold_texts if str(g).strip()]
+    if not gold_list:
+        # Same neutral convention as compute_ir_metrics for missing gold.
+        return {"recall_at_k": 1.0, "precision_at_k": 1.0, "mrr": 1.0, "ndcg_at_k": 1.0}
+
+    top_k = [str(t) for t in retrieved_texts[:k] if str(t).strip()]
+
+    # Binary relevance of each retrieved slot: covers any gold evidence?
+    relevance: list[bool] = [
+        any(evidence_hit(g, t) for g in gold_list) for t in top_k
+    ]
+
+    # Recall: fraction of gold items covered by ANY top-k retrieval
+    covered = 0
+    for g in gold_list:
+        if any(evidence_hit(g, t) for t in top_k):
+            covered += 1
+    recall = covered / len(gold_list)
+
+    precision = sum(relevance) / max(1, len(top_k))
+
+    mrr = 0.0
+    for idx, rel in enumerate(relevance, start=1):
+        if rel:
+            mrr = 1.0 / idx
+            break
+
+    # NDCG with per-gold credit: once a gold item is covered by an earlier
+    # (higher-ranked) slot, later slots covering the SAME gold item add no
+    # further gain — without this, duplicates inflate DCG above IDCG (>1.0).
+    dcg = 0.0
+    credited: set[int] = set()
+    for idx, text in enumerate(top_k, start=1):
+        for g_idx, g in enumerate(gold_list):
+            if g_idx in credited:
+                continue
+            if evidence_hit(g, text):
+                dcg += 1.0 / math.log2(idx + 1)
+                credited.add(g_idx)
+                break
+
+    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, min(k, len(gold_list)) + 1))
     ndcg = (dcg / idcg) if idcg > 0.0 else 0.0
 
     return {

@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 from agent.memory.episodic import EpisodicMemoryStore, EpisodicRetrievalResult
-from agent.memory.procedural import ProceduralMemoryBank, TrajectoryArchetype
+from agent.memory.procedural import ProceduralMemoryBank
 from agent.tools.base import ToolResult
 
 
@@ -93,7 +94,14 @@ def memory_retrieval_tool(
     payload: MemoryQueryInput, client: MemoryRetrievalTool | None = None
 ) -> ToolResult[MemoryQueryOutput]:
     """Instrumented tool entrypoint for memory retrieval."""
-    instance = client or MemoryRetrievalTool()
+    if client is None:
+        # Cached process-wide singleton sharing one encoder across the
+        # episodic and procedural tiers (see agent/tools/_clients.py).
+        from agent.tools._clients import get_memory_tool_client
+
+        instance: MemoryRetrievalTool = get_memory_tool_client()
+    else:
+        instance = client
     return ToolResult.execute_instrumented(
         tool_name="memory_retrieval",
         fn=instance.search,

@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
+
 import pytest
 
 from agent.memory.episodic import (
-    EpisodicEntry,
-    EpisodicMemoryStore,
     compute_recency_score,
 )
 from agent.memory.procedural import ProceduralMemoryBank
@@ -16,15 +15,14 @@ from agent.memory.promoter import (
     MemoryPromotionEngine,
     calculate_episode_importance,
 )
-from agent.memory.working import WorkingMemoryManager, get_checkpointer
+from agent.memory.working import get_checkpointer
 from agent.state.schema import (
     AgentStateV1,
     append_scratchpad,
     append_tool_results,
     merge_sub_task_results,
 )
-from agent.tools.memory_tool import MemoryQueryInput, MemoryRetrievalTool
-
+from agent.tools.memory_tool import MemoryQueryInput
 
 # =====================================================================
 # State Schema & Reducer Tests
@@ -66,7 +64,7 @@ def test_langgraph_reducers() -> None:
 
 
 def test_exponential_recency_decay() -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     half_life = 30.0
 
     # Event occurring now: Score = 2^0 = 1.0
@@ -132,7 +130,7 @@ def test_memory_promotion_skips_incomplete_sessions() -> None:
 
 
 def test_checkpointer_prefers_redis_and_persists_state() -> None:
-    from langgraph.graph import StateGraph, START, END
+    from langgraph.graph import END, START, StateGraph
     from typing_extensions import TypedDict
 
     class S(TypedDict):
@@ -155,7 +153,6 @@ def test_checkpointer_prefers_redis_and_persists_state() -> None:
 
 
 def test_checkpointer_falls_back_when_redis_unreachable() -> None:
-    import os
 
     from langgraph.checkpoint.memory import MemorySaver
 

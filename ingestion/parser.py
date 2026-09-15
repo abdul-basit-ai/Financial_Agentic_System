@@ -19,7 +19,6 @@ from ingestion.entity_extractor import extract_entities
 from ingestion.table_parser import parse_table_structure
 from ingestion.text_chunker import chunk_context
 
-
 SPLITS = ["train", "dev", "test", "private_test"]
 PROGRAM_OPS = {
     "add",

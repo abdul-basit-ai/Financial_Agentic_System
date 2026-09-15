@@ -37,6 +37,7 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.4",
     "mypy>=1.10",
+    "types-psycopg2>=2.9",
     "isort>=5.13",
     "pre-commit>=3.7",
     "pip-audit>=2.7",
@@ -88,6 +89,11 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
+# E501 is deliberately not gated: the codebase legitimately carries long
+# lines (Streamlit CSS blocks, Cypher templates, hash-concat expressions,
+# compiled regexes) and automated rewrapping risks semantic drift. Correctness
+# rules (F/E/W/I/N/UP minus E501) stay enforced.
+ignore = ["E501"]
 
 [tool.mypy]
 python_version = "3.11"

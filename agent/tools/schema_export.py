@@ -72,7 +72,8 @@ def load_tool_schema(tool_name: str) -> dict[str, Any] | None:
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        loaded = json.load(f)
+    return loaded if isinstance(loaded, dict) else None
 
 
 if __name__ == "__main__":

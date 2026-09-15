@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
+
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 
@@ -120,7 +121,8 @@ def build_financial_agent_graph(checkpointer: BaseCheckpointSaver | None = None)
     # 1. Register All Nodes
     workflow.add_node("read_memory", read_memory_node)
     workflow.add_node("plan", plan_node)
-    workflow.add_node("sub_task_worker", sub_task_worker)
+    # dict payload signature is intentional: this node is dispatched via Send
+    workflow.add_node("sub_task_worker", sub_task_worker)  # type: ignore[arg-type]
     workflow.add_node("aggregate_sub_tasks", aggregate_sub_tasks_node)
     # Plain-node wrapper so EDIT re-entry can route into the Send fan-out
     # (a conditional edge cannot target another conditional edge).

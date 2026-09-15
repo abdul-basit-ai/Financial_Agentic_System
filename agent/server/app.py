@@ -5,8 +5,9 @@ from __future__ import annotations
 import os
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Any
+
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -55,7 +56,10 @@ def create_app() -> FastAPI:
 
     # 2. Distributed Tracing & Request ID Middleware
     @app.middleware("http")
-    async def request_tracing_middleware(request: Request, call_next: Any) -> Response:
+    async def request_tracing_middleware(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
         trace_id = request.headers.get("X-Trace-Id", f"trace_{uuid.uuid4().hex[:12]}")
         start_time = time.perf_counter()
 
@@ -81,6 +85,15 @@ def create_app() -> FastAPI:
 
     # 4. Attach API Routers
     app.include_router(api_router)
+
+    # 5. Root-level health probes. K8s liveness/readiness probes and container
+    # healthchecks expect /health; the versioned endpoint lives at
+    # /api/v1/health (routes.py). Keep both — probes must never 404.
+    @app.get("/health", include_in_schema=False)
+    @app.get("/healthz", include_in_schema=False)
+    @app.get("/", include_in_schema=False)
+    async def root_health() -> dict[str, str]:
+        return {"status": "healthy", "service": "finagent-production-gateway"}
 
     return app
 

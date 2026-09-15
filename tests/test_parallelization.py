@@ -10,6 +10,7 @@ Verifies:
 from __future__ import annotations
 
 import uuid
+
 from langgraph.checkpoint.memory import MemorySaver
 
 from agent.graph import create_financial_agent
@@ -108,7 +109,7 @@ def test_end_to_end_parallel_graph_execution() -> None:
 
 
 def test_tool_slot_immediate_and_release() -> None:
-    from agent.nodes.concurrency import ToolSlot, get_contention_stats
+    from agent.nodes.concurrency import ToolSlot
 
     with ToolSlot("safe_math") as slot:
         assert slot.status == "immediate"

@@ -5,15 +5,16 @@ from __future__ import annotations
 import asyncio
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 try:
     from langgraph.types import Command
-except ImportError:
-    Command = None
+except ImportError:  # pragma: no cover
+    Command = None  # type: ignore[assignment,misc]
 
 from agent.server.schemas import (
     ApprovalItem,
@@ -42,7 +43,7 @@ async def _execute_background_job(
 ) -> None:
     """Asynchronous background execution worker."""
     JOB_STORE[job_id]["status"] = "RUNNING"
-    JOB_STORE[job_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+    JOB_STORE[job_id]["updated_at"] = datetime.now(UTC).isoformat()
     start_time = time.perf_counter()
 
     try:
@@ -58,7 +59,7 @@ async def _execute_background_job(
 
         JOB_STORE[job_id].update({
             "status": "SUSPENDED_HITL" if is_paused else "COMPLETED",
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
             "result": final_state,
             "execution_time_ms": round(duration_ms, 2),
         })
@@ -66,7 +67,7 @@ async def _execute_background_job(
         duration_ms = (time.perf_counter() - start_time) * 1000.0
         JOB_STORE[job_id].update({
             "status": "FAILED",
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(UTC).isoformat(),
             "error": f"{type(exc).__name__}: {str(exc)}",
             "execution_time_ms": round(duration_ms, 2),
         })
@@ -99,7 +100,7 @@ async def query_stream_endpoint(request: Request, body: QueryRequest) -> Streami
     ACTIVE_THREADS[body.thread_id] = {
         "input_query": body.query,
         "company_identifier": body.company_identifier,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(UTC).isoformat(),
     }
 
     return StreamingResponse(
@@ -132,7 +133,7 @@ async def query_async_endpoint(
 ) -> AsyncJobResponse:
     agent = request.app.state.agent
     job_id = f"job_{uuid.uuid4().hex[:12]}"
-    now_str = datetime.now(timezone.utc).isoformat()
+    now_str = datetime.now(UTC).isoformat()
 
     initial_state = AgentStateV1(
         input=body.query,
@@ -206,6 +207,7 @@ async def get_job_status_endpoint(job_id: str) -> JobStatusResponse:
 async def list_approvals_endpoint(request: Request) -> ApprovalListResponse:
     agent = request.app.state.agent
     approval_items: list[ApprovalItem] = []
+    finished_threads: list[str] = []
 
     for thread_id, meta in list(ACTIVE_THREADS.items()):
         config = {"configurable": {"thread_id": thread_id}}
@@ -215,6 +217,9 @@ async def list_approvals_endpoint(request: Request) -> ApprovalListResponse:
             continue
 
         if not snapshot or not snapshot.values:
+            # No checkpointed state (e.g. Redis flushed) — registry entry is
+            # stale; drop it so the queue cannot grow without bound.
+            finished_threads.append(thread_id)
             continue
 
         is_paused = bool(snapshot.next)
@@ -236,9 +241,19 @@ async def list_approvals_endpoint(request: Request) -> ApprovalListResponse:
                     trigger_reasons=trigger_reasons,
                     pending_tool_calls=snapshot.values.get("tool_calls", []),
                     scratchpad_summary=scratchpad[-5:] if scratchpad else [],
-                    created_at=meta.get("created_at", datetime.now(timezone.utc).isoformat()),
+                    created_at=meta.get("created_at", datetime.now(UTC).isoformat()),
                 )
             )
+        elif snapshot.values.get("final_answer") or snapshot.values.get("is_terminal"):
+            # Terminal thread (resumed/completed/rejected) — no longer a
+            # pending approval; prune from the registry (checkpoint history
+            # stays in Redis independently). Mid-run threads have neither
+            # flag set and are kept: pruning them here would race an active
+            # stream whose interrupt hasn't been checkpointed yet.
+            finished_threads.append(thread_id)
+
+    for thread_id in finished_threads:
+        ACTIVE_THREADS.pop(thread_id, None)
 
     return ApprovalListResponse(
         total_pending=len(approval_items),
@@ -315,7 +330,7 @@ async def resume_thread_endpoint(
 
     try:
         if Command is not None:
-            resume_cmd = Command(resume=decision_payload)
+            resume_cmd: Any = Command(resume=decision_payload)
             resumed_output = await asyncio.to_thread(agent.invoke, resume_cmd, config=config)
         else:
             agent.update_state(config, {"hitl_status": body.action})

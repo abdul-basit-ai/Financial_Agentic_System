@@ -114,7 +114,7 @@ class ToolSlot:
         self.status: str = "not_acquired"
         self._acquired = False
 
-    def __enter__(self) -> "ToolSlot":
+    def __enter__(self) -> ToolSlot:
         acquired, waited, status = acquire_tool_slot(self.tool_name)
         self._acquired = acquired
         self.wait_seconds = waited

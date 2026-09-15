@@ -5,11 +5,9 @@ from __future__ import annotations
 import json
 import os
 
-import pytest
-
-from agent.tools import safe_math_tool, SafeMathInput
+from agent.tools import SafeMathInput, safe_math_tool
 from agent.tools.metrics_logger import log_tool_result, read_metrics, summarize_metrics
-from agent.tools.schema_export import export_schemas, load_tool_schema, SCHEMA_DIR
+from agent.tools.schema_export import export_schemas, load_tool_schema
 
 EXPECTED_TOOLS = {
     "safe_math",

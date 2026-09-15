@@ -18,7 +18,6 @@ from typing import Any
 from ingestion.entity_resolution import resolve_metric_names
 from ingestion.unit_normalizer import normalize_with_context
 
-
 SPLITS = ["train", "dev", "test", "private_test"]
 PER_SHARE_OR_RATIO_RE = re.compile(
     r"\b(per\s+share|per\s+common\s+share|eps|ratio|margin|percentage|rate|"

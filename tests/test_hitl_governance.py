@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import math
 import uuid
-import pytest
+
 from langgraph.checkpoint.memory import MemorySaver
 
 from agent.graph import create_financial_agent
@@ -23,7 +23,6 @@ from agent.guardrails.risk_engine import (
     verify_benford_law_conformity,
 )
 from agent.state.schema import AgentStateV1
-
 
 # =====================================================================
 # Statistical & Financial Risk Tests

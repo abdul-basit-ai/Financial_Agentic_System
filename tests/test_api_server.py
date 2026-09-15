@@ -10,8 +10,8 @@ Verifies:
 
 from __future__ import annotations
 
-import asyncio
 import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import MemorySaver

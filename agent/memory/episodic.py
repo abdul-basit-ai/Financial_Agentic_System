@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import math
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel, Field
-from sentence_transformers import SentenceTransformer
 
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 EMBEDDING_DIM = 384
@@ -48,7 +48,7 @@ class EpisodicEntry(BaseModel):
     company_identifier: str | None = None
     key_findings: dict[str, Any] = Field(default_factory=dict)
     importance_score: float = Field(default=0.5, ge=0.0, le=1.0)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class EpisodicRetrievalResult(BaseModel):
@@ -66,9 +66,9 @@ class EpisodicRetrievalResult(BaseModel):
 
 def compute_recency_score(created_at: datetime, half_life_days: float = DEFAULT_HALF_LIFE_DAYS) -> float:
     """Calculates exponential memory decay: S_rec = 2^(-delta_t / tau_half)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
+        created_at = created_at.replace(tzinfo=UTC)
     delta_days = max(0.0, (now - created_at).total_seconds() / 86400.0)
     return math.pow(2.0, -delta_days / half_life_days)
 
@@ -85,13 +85,16 @@ class EpisodicMemoryStore:
         password: str | None = None,
         model_name: str = EMBEDDING_MODEL_NAME,
     ) -> None:
-        self.conn_params = {
+        self.conn_params: dict[str, Any] = {
             "host": host or os.getenv("POSTGRES_HOST", "localhost"),
             "port": port or int(os.getenv("POSTGRES_PORT", "5432")),
             "dbname": dbname or os.getenv("POSTGRES_DB", "financial_agent"),
             "user": user or os.getenv("POSTGRES_USER", "postgres"),
             "password": password or os.getenv("POSTGRES_PASSWORD", "password"),
         }
+        # Imported here so importing this module does not pull torch
+        from sentence_transformers import SentenceTransformer
+
         self.model = SentenceTransformer(model_name)
         self._conn = None
 

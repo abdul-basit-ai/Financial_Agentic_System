@@ -15,9 +15,9 @@ from agent.telemetry.metrics import (
 from agent.telemetry.quota import (
     DEFAULT_MONTHLY_FREE_QUOTA,
     DEFAULT_SAFETY_CEILING,
+    QUOTA_GUARD,
     LangSmithQuotaGuard,
     QuotaStatus,
-    QUOTA_GUARD,
 )
 from agent.telemetry.tracer import (
     LOCAL_TRACER,

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -90,7 +91,7 @@ class ApprovalItem(BaseModel):
     trigger_reasons: list[str] = Field(default_factory=list)
     pending_tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     scratchpad_summary: list[str] = Field(default_factory=list)
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 class ApprovalListResponse(BaseModel):

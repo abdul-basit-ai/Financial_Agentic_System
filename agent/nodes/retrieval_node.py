@@ -121,7 +121,7 @@ def fuse_context_node(state: AgentStateV1) -> dict[str, Any]:
     }
     parallel_only = [
         env for tid, env in state.sub_task_results.items()
-        if (tid, env.get("tool_name")) not in seen and isinstance(env, dict)
+        if isinstance(env, dict) and (tid, env.get("tool_name")) not in seen
     ]
     _collect(parallel_only)
 

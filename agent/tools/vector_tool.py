@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import os
 from typing import Any
+
 import psycopg2
 from psycopg2.extensions import connection
 from pydantic import BaseModel, Field
-from sentence_transformers import SentenceTransformer
 
 from agent.tools.base import ToolResult
 
@@ -53,6 +53,9 @@ class VectorRetrievalTool:
         self.dbname = dbname or os.getenv("POSTGRES_DB", "financial_agent")
         self.user = user or os.getenv("POSTGRES_USER", "postgres")
         self.password = password or os.getenv("POSTGRES_PASSWORD", "password")
+
+        # Imported here so importing this module does not pull torch
+        from sentence_transformers import SentenceTransformer
 
         self.model = SentenceTransformer(model_name)
         self._conn: connection | None = None
@@ -133,7 +136,14 @@ def vector_retrieval_tool(
     payload: VectorSearchInput, client: VectorRetrievalTool | None = None
 ) -> ToolResult[VectorSearchOutput]:
     """Instrumented tool entrypoint for semantic vector retrieval."""
-    instance = client or VectorRetrievalTool()
+    if client is None:
+        # Cached process-wide singleton: avoids reloading the sentence
+        # encoder on every call (see agent/tools/_clients.py).
+        from agent.tools._clients import get_vector_tool_client
+
+        instance: VectorRetrievalTool = get_vector_tool_client()
+    else:
+        instance = client
     return ToolResult.execute_instrumented(
         tool_name="vector_retrieval",
         fn=instance.search,

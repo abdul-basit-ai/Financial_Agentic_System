@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import os
 import random
-from typing import Any
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel
 
 DEFAULT_MONTHLY_FREE_QUOTA = 5000
 DEFAULT_SAFETY_CEILING = 4500  # Leaves 500 traces for ad-hoc debugging

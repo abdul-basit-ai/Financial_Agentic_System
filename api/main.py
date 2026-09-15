@@ -1,10 +1,11 @@
-"""FastAPI application entry point."""
+"""FastAPI application entry point.
 
-from fastapi import FastAPI
+Re-exports the production gateway (agent/server/app.py) so both
+`uvicorn agent.server.app:app` and `uvicorn api.main:app` serve the same
+application. This file used to be a bare /health stub, which made it easy to
+accidentally serve an API without the agent, routes, or HITL governance.
+"""
 
-app = FastAPI(title="Financial Agent API", version="0.1.0")
+from agent.server.app import app
 
-
-@app.get("/health")
-async def health():
-    return {"status": "ok"}
+__all__ = ["app"]

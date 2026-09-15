@@ -6,6 +6,7 @@ import functools
 import time
 from collections.abc import Callable
 from typing import Any, TypeVar
+
 from pydantic import BaseModel, Field
 
 from agent.telemetry.quota import QUOTA_GUARD
@@ -16,7 +17,7 @@ T = TypeVar("T")
 try:
     from langsmith import traceable as ls_traceable
 except ImportError:
-    ls_traceable = None
+    ls_traceable = None  # type: ignore[assignment]
 
 
 class TraceSpanRecord(BaseModel):
@@ -83,7 +84,7 @@ def trace_operation(
 
             try:
                 if should_send and ls_traceable is not None:
-                    wrapped = ls_traceable(
+                    wrapped = ls_traceable(  # type: ignore[call-overload]
                         name=name,
                         run_type=run_type,
                         metadata=metadata or {},
@@ -91,7 +92,7 @@ def trace_operation(
                     output = wrapped(*args, **kwargs)
                 else:
                     output = fn(*args, **kwargs)
-                return output
+                return output  # type: ignore[no-any-return]
             except Exception as exc:
                 err_msg = str(exc)
                 raise

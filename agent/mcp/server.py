@@ -10,6 +10,11 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from agent.mcp.resources import (
+    get_filing_reference_resource,
+    get_graph_schema_resource,
+    get_prompt_template_resource,
+)
 from agent.sandbox.protocol import SandboxExecutionInput
 from agent.tools import (
     ContextFusionInput,
@@ -25,11 +30,6 @@ from agent.tools import (
     memory_retrieval_tool,
     safe_math_tool,
     vector_retrieval_tool,
-)
-from agent.mcp.resources import (
-    get_filing_reference_resource,
-    get_graph_schema_resource,
-    get_prompt_template_resource,
 )
 
 # Initialize Standalone FastMCP Server

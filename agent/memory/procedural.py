@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-from pydantic import BaseModel, Field
-from sentence_transformers import SentenceTransformer
+from pydantic import BaseModel
 
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
@@ -67,6 +65,9 @@ class ProceduralMemoryBank:
     """Matches incoming queries against verified procedural execution archetypes."""
 
     def __init__(self, model_name: str = EMBEDDING_MODEL_NAME) -> None:
+        # Imported here so importing this module does not pull torch
+        from sentence_transformers import SentenceTransformer
+
         self.model = SentenceTransformer(model_name)
         self.archetypes = {a.archetype_id: a for a in STANDARD_ARCHETYPES}
         self._embeddings: dict[str, list[float]] = {}

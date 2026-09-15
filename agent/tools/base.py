@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from typing import Any, Generic, TypeVar
+
 from pydantic import BaseModel, ConfigDict, Field
 
 T = TypeVar("T")

@@ -6,6 +6,7 @@ import ast
 import operator
 import re
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 from agent.tools.base import ToolResult
@@ -24,8 +25,8 @@ class SafeMathOutput(BaseModel):
     formatted: str = Field(..., description="Formatted string representation of result")
 
 
-# Whitelisted binary and unary operators
-SAFE_OPERATORS: dict[type[ast.operator | ast.unaryop], Any] = {
+# Whitelisted binary and unary operators (ast.operator / ast.unaryop types)
+SAFE_OPERATORS: dict[type[Any], Any] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
     ast.Mult: operator.mul,
@@ -84,7 +85,7 @@ class SafeMathEvaluator:
             raise ASTSecurityError(f"Unsupported constant type: {type(node.value)}")
 
         if isinstance(node, ast.BinOp):
-            op_type = type(node.op)
+            op_type: type[Any] = type(node.op)
             if op_type not in SAFE_OPERATORS:
                 raise ASTSecurityError(f"Unsupported binary operator: {op_type.__name__}")
             left = self._eval_node(node.left, current_depth + 1)

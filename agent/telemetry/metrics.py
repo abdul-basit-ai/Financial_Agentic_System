@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+
 from pydantic import BaseModel, Field
 
 # Pricing per 1,000 tokens (USD)

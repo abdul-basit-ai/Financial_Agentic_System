@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
+
 from pydantic import BaseModel
 
 from evaluation.metrics import is_numeric_match, is_program_match
 
 
-class FailureCategory(str, Enum):
+class FailureCategory(StrEnum):
     CORRECT = "CORRECT"
     RETRIEVAL_MISS = "RETRIEVAL_MISS"
     EXTRACTION_CORRUPTION = "EXTRACTION_CORRUPTION"
@@ -37,7 +38,6 @@ def classify_failure(
     final_answer = state.get("final_answer")
     tool_results = state.get("tool_results", [])
     hitl_status = state.get("hitl_status", "NONE")
-    scratchpad = state.get("scratchpad", [])
 
     # 1. Check Guardrail Interrupts & Aborts
     if hitl_status == "REJECTED":
@@ -95,8 +95,10 @@ def classify_failure(
         )
 
     # 5. Causal Step 2: Planning Error
+    # Failed envelopes carry "data": None (key present, value None) — the
+    # plain .get("data", {}) default does not cover that case.
     executed_expressions = [
-        str(r.get("data", {}).get("expression", ""))
+        str((r.get("data") or {}).get("expression", ""))
         for r in tool_results
         if r.get("tool_name") == "safe_math"
     ]

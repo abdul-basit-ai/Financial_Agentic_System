@@ -70,8 +70,12 @@ services:
     environment:
       - NEO4J_URI=bolt://neo4j:7687
       - POSTGRES_HOST=pgvector
-      - REDIS_URL=redis://redis-stack:6379/0
+      - REDIS_URL=redis://redis:6379/0
       - MLFLOW_TRACKING_URI=http://mlflow:5000
+      # LangSmith EU region: the PAT was created in an EU workspace; the
+      # default US endpoint (api.smith.langchain.com) returns 403 for it.
+      - LANGSMITH_ENDPOINT=https://eu.api.smith.langchain.com
+      - LANGCHAIN_ENDPOINT=https://eu.api.smith.langchain.com
 
   ui:
     build:

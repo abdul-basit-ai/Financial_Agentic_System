@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agent.tools.decomposer import decompose_query, DecompositionInput
+from agent.tools.decomposer import DecompositionInput, decompose_query
 from agent.tools.fusion_tool import (
     ContextFusionInput,
     reciprocal_rank_fusion,
@@ -21,7 +21,6 @@ from agent.tools.safe_math import (
     safe_math_tool,
 )
 from agent.tools.vector_tool import VectorChunkRecord, VectorSearchInput
-
 
 # =====================================================================
 # Safe Math Tool Tests

@@ -1,13 +1,63 @@
-"""Synthesis node validating evidence completeness and formatting citations."""
+"""Synthesis node validating evidence completeness and formatting citations.
+
+Two synthesis paths share one evidence gate:
+- LLM synthesizer (synthesizer_v2): analyst-prose answer over the verified
+  evidence bundle, with a strict anti-hallucination post-check — every numeral
+  in the LLM output must exist in the evidence (or the question). Any
+  ungrounded figure rejects the LLM draft and falls back to the template.
+- Deterministic template: used when no LLM is configured, the call fails, the
+  output is ungrounded, or evidence is partial — evaluation and CI stay
+  runnable offline.
+"""
 
 from __future__ import annotations
 
 from typing import Any
 
+from agent.llm import extract_numerals, invoke_llm, is_llm_enabled
 from agent.prompts import load_prompt
 from agent.state.schema import AgentStateV1
 
 MAX_GRAPH_ITERATIONS = 3
+
+_SYNTH_PROMPT_NAME = "synthesizer_v2"
+
+
+def _to_float(token: str) -> float | None:
+    try:
+        return float(token.replace(",", ""))
+    except ValueError:
+        return None
+
+
+def _strip_list_markers(text: str) -> str:
+    """Removes bullet ordinals ("1.", "2)") so list formatting is not
+    mistaken for ungrounded figures by the numeral check."""
+    import re
+
+    return re.sub(r"^\s*\d+[.)]\s+", "", text, flags=re.MULTILINE)
+
+
+def _is_grounded(answer: str, grounding_corpus: list[str]) -> bool:
+    """True when every numeral in the answer exists in the corpus.
+
+    The corpus includes the user question (quoted figures are user-provided,
+    not hallucinations) plus every evidence string verbatim.
+    """
+    allowed: set[float] = set()
+    for text in grounding_corpus:
+        for token in extract_numerals(text):
+            f = _to_float(token)
+            if f is not None:
+                allowed.add(f)
+
+    for token in extract_numerals(_strip_list_markers(answer)):
+        f = _to_float(token)
+        if f is None:
+            continue
+        if f not in allowed:
+            return False
+    return True
 
 
 def synthesize_node(state: AgentStateV1) -> dict[str, Any]:
@@ -24,7 +74,7 @@ def synthesize_node(state: AgentStateV1) -> dict[str, Any]:
         }
         parallel_only = [
             env for tid, env in state.sub_task_results.items()
-            if (tid, env.get("tool_name")) not in seen and isinstance(env, dict)
+            if isinstance(env, dict) and (tid, env.get("tool_name")) not in seen
         ]
         return state.tool_results + parallel_only
 
@@ -111,38 +161,34 @@ def synthesize_node(state: AgentStateV1) -> dict[str, Any]:
 
     # Termination check: Sufficient data OR hit iteration limit
     if has_sufficient_evidence:
-        # Build synthesis response
-        parts = [f"Financial Analysis for: {state.input}\n"]
-
-        if math_results:
-            parts.append("Calculated Metrics:")
-            for m in math_results:
-                d = m.get("data", {})
-                parts.append(f"• Formula: {d.get('expression')} = {d.get('formatted')}")
-
-        if graph_results:
-            parts.append("\nVerified Filing Data:")
-            for g in graph_results:
-                records = g.get("data", {}).get("records", [])
-                for rec in records[:5]:
-                    parts.append(
-                        f"• {rec.get('company')} ({rec.get('year') or 'FY'}): "
-                        f"{rec.get('row_label')} = {rec.get('amount')} (Normalized: {rec.get('normalized_amount')})"
-                    )
-
-        if vector_results:
-            parts.append("\nDisclosed Drivers & Context:")
-            for v in vector_results:
-                chunks = v.get("data", {}).get("chunks", [])
-                for ch in chunks[:2]:
-                    parts.append(f"• [{ch.get('section')}] {ch.get('text_content')}")
-
-        final_answer = "\n".join(parts)
-        log_entry = (
-            f"[Synthesizer {prompt_version} (hash:{prompt_hash})] "
-            f"Successfully synthesized response with {len(state.tool_results)} verified evidence items."
+        grounding_corpus, evidence_block = _build_evidence_bundle(
+            state, math_results, graph_results, vector_results
         )
 
+        llm_answer, llm_log = _synthesize_with_llm(
+            state, evidence_block, grounding_corpus
+        )
+        if llm_answer is not None:
+            return {
+                "final_answer": llm_answer,
+                "is_terminal": True,
+                "scratchpad": [
+                    llm_log,
+                    f"[Synthesizer {prompt_version} (hash:{prompt_hash})] "
+                    f"LLM synthesis grounded on {len(grounding_corpus) - 1} evidence items.",
+                ],
+            }
+
+        final_answer = _deterministic_answer(
+            state, math_results, graph_results, vector_results
+        )
+        log_entry = (
+            f"[Synthesizer {prompt_version} (hash:{prompt_hash}) rules] "
+            f"Template synthesis over verified evidence (LLM path "
+            f"{'unavailable' if not is_llm_enabled() else 'rejected/ungrounded'})."
+        )
+        if llm_log:
+            log_entry = f"{llm_log}\n{log_entry}"
         return {
             "final_answer": final_answer,
             "is_terminal": True,
@@ -175,6 +221,130 @@ def synthesize_node(state: AgentStateV1) -> dict[str, Any]:
         "scratchpad": [critique],
         "is_terminal": False,
     }
+
+
+def _build_evidence_bundle(
+    state: AgentStateV1,
+    math_results: list[dict[str, Any]],
+    graph_results: list[dict[str, Any]],
+    vector_results: list[dict[str, Any]],
+) -> tuple[list[str], str]:
+    """Renders the verified evidence for the LLM prompt.
+
+    Returns (grounding_corpus, formatted_block): the corpus is every string a
+    synthesized numeral is allowed to match (question + evidence), the block
+    is the prompt-ready text.
+    """
+    corpus: list[str] = [state.input]
+    lines: list[str] = []
+
+    if math_results:
+        lines.append("Calculated Metrics (deterministic, already computed):")
+        for m in math_results:
+            d = m.get("data", {})
+            entry = f"• Formula: {d.get('expression')} = {d.get('formatted')}"
+            lines.append(entry)
+            corpus.append(f"{d.get('expression')} {d.get('formatted')} {d.get('result')}")
+
+    if graph_results:
+        lines.append("Verified Filing Data (table line items):")
+        for g in graph_results:
+            records = g.get("data", {}).get("records", [])
+            for rec in records[:5]:
+                entry = (
+                    f"• {rec.get('company')} ({rec.get('year') or 'FY'}): "
+                    f"{rec.get('row_label')} = {rec.get('amount')} "
+                    f"(Normalized: {rec.get('normalized_amount')})"
+                )
+                lines.append(entry)
+                corpus.append(
+                    f"{rec.get('company')} {rec.get('year')} {rec.get('row_label')} "
+                    f"{rec.get('amount')} {rec.get('normalized_amount')}"
+                )
+
+    if vector_results:
+        lines.append("Disclosed Drivers & Context (narrative):")
+        for v in vector_results:
+            chunks = v.get("data", {}).get("chunks", [])
+            for ch in chunks[:2]:
+                entry = f"• [{ch.get('section')}] {ch.get('text_content')}"
+                lines.append(entry)
+                corpus.append(f"{ch.get('section')} {ch.get('text_content')}")
+
+    return corpus, "\n".join(lines)
+
+
+def _synthesize_with_llm(
+    state: AgentStateV1,
+    evidence_block: str,
+    grounding_corpus: list[str],
+) -> tuple[str | None, str]:
+    """Attempts LLM synthesis. Returns (answer, log); answer None on any
+    fallback condition (disabled, failure, empty, ungrounded numerals)."""
+    if not is_llm_enabled():
+        return None, ""
+
+    system_prompt = load_prompt(_SYNTH_PROMPT_NAME)[0]
+    user_prompt = (
+        f"User question: {state.input}\n\n"
+        f"VERIFIED EVIDENCE (the only allowed source of figures):\n"
+        f"{evidence_block}\n\n"
+        "Write the final answer. Bullet points only — no numbered lists, "
+        "no markdown tables, no code fences."
+    )
+
+    result = invoke_llm(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=900)
+    if result is None:
+        return None, ""
+
+    log = (
+        f"[Synthesizer llm:{result.model}] tokens {result.prompt_tokens}+"
+        f"{result.completion_tokens}, est. cost ${result.cost_usd:.6f}."
+    )
+
+    answer = str(result.content or "").strip()
+    if not answer:
+        return None, f"{log} Draft empty; rejected."
+
+    if not _is_grounded(answer, grounding_corpus):
+        return None, f"{log} Draft contained ungrounded numerals; rejected (no-hallucination policy)."
+
+    return answer, log
+
+
+def _deterministic_answer(
+    state: AgentStateV1,
+    math_results: list[dict[str, Any]],
+    graph_results: list[dict[str, Any]],
+    vector_results: list[dict[str, Any]],
+) -> str:
+    """Template synthesis — the deterministic fallback renderer."""
+    parts = [f"Financial Analysis for: {state.input}\n"]
+
+    if math_results:
+        parts.append("Calculated Metrics:")
+        for m in math_results:
+            d = m.get("data", {})
+            parts.append(f"• Formula: {d.get('expression')} = {d.get('formatted')}")
+
+    if graph_results:
+        parts.append("\nVerified Filing Data:")
+        for g in graph_results:
+            records = g.get("data", {}).get("records", [])
+            for rec in records[:5]:
+                parts.append(
+                    f"• {rec.get('company')} ({rec.get('year') or 'FY'}): "
+                    f"{rec.get('row_label')} = {rec.get('amount')} (Normalized: {rec.get('normalized_amount')})"
+                )
+
+    if vector_results:
+        parts.append("\nDisclosed Drivers & Context:")
+        for v in vector_results:
+            chunks = v.get("data", {}).get("chunks", [])
+            for ch in chunks[:2]:
+                parts.append(f"• [{ch.get('section')}] {ch.get('text_content')}")
+
+    return "\n".join(parts)
 
 
 def _insufficient_evidence_answer(state: AgentStateV1, failed_results: list[dict[str, Any]]) -> str:

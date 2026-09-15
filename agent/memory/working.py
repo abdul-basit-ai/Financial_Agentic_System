@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+
 import redis
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
@@ -20,8 +20,8 @@ class WorkingMemoryManager:
         redis_url: str | None = None,
         default_ttl_seconds: int = 86400,  # 24 hours
     ) -> None:
-        self.redis_url = redis_url or os.getenv(
-            "REDIS_URL", "redis://localhost:6379/0"
+        self.redis_url: str = (
+            redis_url if redis_url is not None else os.getenv("REDIS_URL", "redis://localhost:6379/0")
         )
         self.default_ttl = default_ttl_seconds
         self._client: redis.Redis | None = None
@@ -65,7 +65,9 @@ def get_checkpointer(redis_url: str | None = None) -> BaseCheckpointSaver:
     creates its search indices. Requires a Redis server with the RediSearch +
     ReJSON modules (redis-stack image), not plain redis-server.
     """
-    target_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    target_url: str = (
+        redis_url if redis_url is not None else os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    )
     try:
         from langgraph.checkpoint.redis import RedisSaver
 

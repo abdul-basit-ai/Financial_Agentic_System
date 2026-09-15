@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Annotated, Any, Literal
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 

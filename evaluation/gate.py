@@ -1,4 +1,9 @@
-"""CI/CD regression gate enforcing McNemar significance and bootstrap confidence bounds."""
+"""CI/CD regression gate enforcing McNemar significance and bootstrap confidence bounds.
+
+Compares two benchmark result files produced by evaluation/runner.py
+(benchmark_results.json, containing the per-record "results" list with
+record_id + execution_correct fields).
+"""
 
 from __future__ import annotations
 
@@ -8,6 +13,7 @@ import math
 import random
 import sys
 from typing import Any
+
 from pydantic import BaseModel
 
 

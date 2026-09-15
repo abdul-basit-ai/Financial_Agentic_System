@@ -11,7 +11,6 @@ Verifies:
 from __future__ import annotations
 
 import os
-import pytest
 
 from agent.telemetry import (
     LOCAL_TRACER,
@@ -21,7 +20,6 @@ from agent.telemetry import (
     init_telemetry,
     trace_operation,
 )
-
 
 # =====================================================================
 # 1. LangSmith Free-Tier Quota & Budget Tests

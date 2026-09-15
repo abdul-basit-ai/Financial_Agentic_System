@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
 from typing import Any
 
 import psycopg2
@@ -64,9 +63,9 @@ class PersistentMerkleAuditLedger(MerkleAuditLedger):
         password: str | None = None,
     ) -> None:
         super().__init__()
-        self.conn_params = {
+        self.conn_params: dict[str, Any] = {
             "host": host or os.getenv("POSTGRES_HOST", "localhost"),
-            "port": int(port or os.getenv("POSTGRES_PORT", "5432")),
+            "port": int(port) if port is not None else int(os.getenv("POSTGRES_PORT", "5432")),
             "dbname": dbname or os.getenv("POSTGRES_DB", "financial_agent"),
             "user": user or os.getenv("POSTGRES_USER", "postgres"),
             "password": password or os.getenv("POSTGRES_PASSWORD", "password"),

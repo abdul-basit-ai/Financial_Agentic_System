@@ -7,16 +7,15 @@ from typing import Any
 # Resilient LangGraph interrupt import across versions
 try:
     from langgraph.types import interrupt
-except ImportError:
+except ImportError:  # pragma: no cover - version shims for very old langgraph
     try:
-        from langgraph.checkpoint.base import interrupt
-    except ImportError:
+        from langgraph.checkpoint.base import interrupt  # type: ignore[attr-defined,no-redef]
+    except ImportError:  # type: ignore[no-redef]
 
-        def interrupt(payload: Any) -> Any:  # Fallback mock for unit tests
+        def interrupt(payload: Any) -> Any:  # type: ignore[misc,no-redef]  # Fallback mock for unit tests
             return {"action": "APPROVE"}
 
 
-from agent.guardrails.audit import MerkleAuditLedger
 from agent.guardrails.persistent_audit import PersistentMerkleAuditLedger
 from agent.guardrails.risk_engine import FinancialRiskEngine
 from agent.state.schema import AgentStateV1
@@ -24,12 +23,26 @@ from agent.state.schema import AgentStateV1
 # Durable audit ledger: Merkle chain persisted to Postgres, surviving process
 # restarts (SEC 17a-4 posture). Degrades to memory-only with a loud warning
 # if the database is unreachable — audit gaps are never silent.
-AUDIT_LEDGER: MerkleAuditLedger = PersistentMerkleAuditLedger()
-AUDIT_LEDGER.init_schema()
+#
+# The instance is created at import (cheap: no I/O in __init__) but schema
+# initialization happens lazily on first governance event, so merely importing
+# this module never touches Postgres (keeps offline test runs fast and
+# import-safe).
+AUDIT_LEDGER: PersistentMerkleAuditLedger = PersistentMerkleAuditLedger()
+_schema_initialized = False
+
+
+def _ensure_audit_schema() -> None:
+    """Initializes the audit table once per process (idempotent DDL)."""
+    global _schema_initialized
+    if not _schema_initialized:
+        AUDIT_LEDGER.init_schema()
+        _schema_initialized = True
 
 
 def eval_financial_risk_node(state: AgentStateV1) -> dict[str, Any]:
     """Inspects intermediate results and determines if human review is required."""
+    _ensure_audit_schema()
     assessment = FinancialRiskEngine.evaluate_state(state.model_dump())
 
     AUDIT_LEDGER.record_transition(
@@ -62,6 +75,7 @@ def hitl_gate_node(state: AgentStateV1) -> dict[str, Any]:
     On resume, applies the reviewer's overrides (if any) to pending tool calls
     before returning, so 'edit-and-resume' flows actually take effect.
     """
+    _ensure_audit_schema()
     # Prepare interrupt payload presented to the human reviewer
     interrupt_payload = {
         "trace_id": state.trace_id,

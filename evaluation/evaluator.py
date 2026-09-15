@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import time
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 from agent.state.schema import AgentStateV1
-from evaluation.metrics import compute_ir_metrics, is_numeric_match, is_program_match, parse_float_safe
+from evaluation.metrics import (
+    compute_ir_metrics_content,
+    is_numeric_match,
+    is_program_match,
+    parse_float_safe,
+)
 from evaluation.taxonomy import FailureCategory, TaxonomyAttribution, classify_failure
 
 
@@ -18,6 +24,10 @@ class EvaluationRecord(BaseModel):
     gold_answer: float | str
     gold_program: str | None = None
     gold_inds: list[str] = Field(default_factory=list)
+    # Human-readable gold evidence strings (the VALUES of FinQA gold_indices).
+    # Retrieval is graded against these via content overlap; gold_inds keys
+    # (table_N / text_M) are kept for diagnostics only.
+    gold_evidence: list[str] = Field(default_factory=list)
     split: str = "dev"
 
 
@@ -85,8 +95,10 @@ class FinQAEvaluator:
         # 2. Compute Metric Accuracies
         exe_match = is_numeric_match(pred_float, gold_float)
 
+        # NOTE: failed envelopes carry "data": None (key present, value None),
+        # so a plain .get("data", {}) default is NOT enough here.
         executed_exprs = [
-            str(r.get("data", {}).get("expression", ""))
+            str((r.get("data") or {}).get("expression", ""))
             for r in tool_results
             if r.get("tool_name") == "safe_math"
         ]
@@ -96,17 +108,26 @@ class FinQAEvaluator:
             else False
         )
 
-        # 3. Compute IR Metrics
-        retrieved_ids: list[str] = []
+        # 3. Compute IR Metrics — content-based: retrieved evidence TEXT
+        # (row labels + amounts, chunk text) is graded against the gold
+        # evidence STRINGS. ID-space comparison is meaningless here because
+        # FinQA gold keys (table_N / text_M) never equal runtime labels.
+        retrieved_texts: list[str] = []
         for r in tool_results:
             data = r.get("data")
             if isinstance(data, dict):
                 for rec in data.get("records", []):
-                    retrieved_ids.append(str(rec.get("row_label", "")))
+                    parts = [
+                        str(rec.get("row_label", "")),
+                        str(rec.get("amount", "")),
+                        str(rec.get("normalized_amount", "")),
+                        str(rec.get("year", "")),
+                    ]
+                    retrieved_texts.append(" ".join(p for p in parts if p and p != "None"))
                 for ch in data.get("chunks", []):
-                    retrieved_ids.append(f"{ch.get('section')}_{ch.get('chunk_index')}")
+                    retrieved_texts.append(str(ch.get("text_content", "")))
 
-        ir_scores = compute_ir_metrics(retrieved_ids, record.gold_inds, k=5)
+        ir_scores = compute_ir_metrics_content(retrieved_texts, record.gold_evidence, k=5)
 
         # 4. Attribute Causal Failure
         attr: TaxonomyAttribution = classify_failure(

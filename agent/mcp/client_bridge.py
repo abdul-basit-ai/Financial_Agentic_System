@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 from agent.mcp.server import mcp
@@ -29,14 +30,23 @@ class MCPClientBridge:
     async def list_tools_async(self) -> list[DiscoveredTool]:
         """Asynchronously discovers all tools exposed by the MCP server."""
         tools_list = await self._server.list_tools()
-        return [
-            DiscoveredTool(
-                name=t.name,
-                description=t.description or "",
-                input_schema=t.parameters if hasattr(t, "parameters") else {},
+        discovered = []
+        for t in tools_list:
+            # mcp >= 1.x FastMCP exposes the JSON Schema as `inputSchema`
+            # (camelCase, matching the wire protocol); older/alternate shapes
+            # used `parameters`. Try both so discovery never returns empty
+            # schemas, which would silently weaken the MCP contract.
+            schema = getattr(t, "inputSchema", None)
+            if not schema:
+                schema = getattr(t, "parameters", {})
+            discovered.append(
+                DiscoveredTool(
+                    name=t.name,
+                    description=t.description or "",
+                    input_schema=schema or {},
+                )
             )
-            for t in tools_list
-        ]
+        return discovered
 
     def list_tools(self) -> list[DiscoveredTool]:
         """Synchronously discovers tools."""

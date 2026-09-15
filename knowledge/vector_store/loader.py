@@ -33,14 +33,16 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     embedding vector({EMBEDDING_DIM})
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS chunk_unique_idx 
+CREATE UNIQUE INDEX IF NOT EXISTS chunk_unique_idx
 ON document_chunks (record_id, section, chunk_index);
 
-CREATE INDEX IF NOT EXISTS chunk_record_idx 
+CREATE INDEX IF NOT EXISTS chunk_record_idx
 ON document_chunks (record_id);
 
-CREATE INDEX IF NOT EXISTS chunk_vector_idx 
-ON document_chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+-- NOTE: the ivfflat index is intentionally NOT created here. On an empty or
+-- tiny table the index clusters are unpopulated and approximate search can
+-- silently return zero/near-zero rows. ensure_vector_index() builds it
+-- lazily once the table holds enough rows (mirrors episodic.py).
 """
 
 
@@ -84,6 +86,31 @@ class VectorStoreLoader:
         with self._conn.cursor() as cur:
             cur.execute(DDL_SCHEMA)
         self._conn.commit()
+
+    def ensure_vector_index(self, min_rows: int = 1000, lists: int = 100) -> bool:
+        """Creates the ivfflat index once the table is large enough to populate it.
+
+        Returns True if the index exists. Below min_rows the index would have
+        empty clusters and approximate search can silently miss rows, so exact
+        sequential scan is used instead (correct, just slower at small scale).
+        """
+        assert self._conn is not None
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT count(*) FROM document_chunks")
+            count = int(cur.fetchone()[0])
+            if count < min_rows:
+                cur.execute("DROP INDEX IF EXISTS chunk_vector_idx")
+                self._conn.commit()
+                return False
+            cur.execute(
+                f"""
+                CREATE INDEX IF NOT EXISTS chunk_vector_idx
+                ON document_chunks USING ivfflat (embedding vector_cosine_ops)
+                WITH (lists = {int(lists)});
+                """
+            )
+            self._conn.commit()
+            return True
 
     def load_chunks_from_record(self, rec: dict[str, Any]) -> list[tuple[Any, ...]]:
         record_id = str(rec.get("record_id", ""))
@@ -138,13 +165,18 @@ class VectorStoreLoader:
         query_emb = self.model.encode(text, normalize_embeddings=True).tolist()
 
         sql = """
-        SELECT record_id, section, chunk_index, text_content, 1 - (embedding <=> %s::vector) AS similarity
+        SELECT record_id, section, chunk_index, text_content, 1 - (embedding <=> %(embedding)s::vector) AS similarity
         FROM document_chunks
-        ORDER BY embedding <=> %s::vector
-        LIMIT %s;
+        ORDER BY embedding <=> %(embedding)s::vector
+        LIMIT %(limit)s;
         """
+        # Pass str(query_emb) so psycopg2 formats '[...]' rather than a
+        # PostgreSQL array '{...}' — the ::vector cast only accepts the former.
         with self._conn.cursor() as cur:
-            cur.execute(sql, (query_emb, query_emb, top_k))
+            cur.execute(
+                sql,
+                {"embedding": str(query_emb), "limit": top_k},
+            )
             results = cur.fetchall()
 
         return [
@@ -204,7 +236,11 @@ def main() -> None:
             inserted = loader.insert_batch(current_batch)
             total_chunks += inserted
 
-        print(f"Vector loading complete: total_chunks={total_chunks}")
+        index_ready = loader.ensure_vector_index()
+        print(
+            f"Vector loading complete: total_chunks={total_chunks}, "
+            f"ivfflat_index={'created' if index_ready else 'deferred (table below min_rows; exact scan in use)'}"
+        )
     finally:
         loader.close()
 

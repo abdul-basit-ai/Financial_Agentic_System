@@ -1,0 +1,457 @@
+{
+  "split": "dev",
+  "total_samples": 25,
+  "execution_accuracy": 0.08,
+  "results": [
+    {
+      "record_id": "V/2008/page_17.pdf-1",
+      "predicted_answer": 3.0,
+      "gold_answer": 127.4,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 38637.012,
+      "token_cost_usd": 0.0,
+      "trace_id": "eb86a957-92a7-42b3-adfa-677265f4106c"
+    },
+    {
+      "record_id": "C/2017/page_328.pdf-1",
+      "predicted_answer": 31.0,
+      "gold_answer": 0.935,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 4425.164,
+      "token_cost_usd": 0.0,
+      "trace_id": "27c6b8b3-aad8-402f-8334-eab9a103c603"
+    },
+    {
+      "record_id": "DVN/2007/page_58.pdf-2",
+      "predicted_answer": null,
+      "gold_answer": 24.69136,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 411.957,
+      "token_cost_usd": 0.0,
+      "trace_id": "447d3557-8a93-43e1-a8b4-be962aa9e5ee"
+    },
+    {
+      "record_id": "ETR/2011/page_341.pdf-3",
+      "predicted_answer": 2010.0,
+      "gold_answer": 19.2,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 32797.224,
+      "token_cost_usd": 0.0,
+      "trace_id": "32d641b6-b55c-4baa-875b-68ddc13a3fd3"
+    },
+    {
+      "record_id": "ETR/2004/page_213.pdf-2",
+      "predicted_answer": null,
+      "gold_answer": 0.60306,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.3333,
+        "precision_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 0.4693
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.33) failed to retrieve all gold evidence items.",
+      "latency_ms": 920.094,
+      "token_cost_usd": 0.0,
+      "trace_id": "69546e40-0abb-4efa-8257-d440b6b6f3a2"
+    },
+    {
+      "record_id": "PM/2017/page_38.pdf-1",
+      "predicted_answer": 688.0,
+      "gold_answer": 688.0,
+      "execution_correct": true,
+      "program_correct": true,
+      "ir_metrics": {
+        "recall_at_k": 1.0,
+        "precision_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0
+      },
+      "taxonomy": "CORRECT",
+      "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
+      "latency_ms": 26289.21,
+      "token_cost_usd": 0.0,
+      "trace_id": "3d436da5-d5d5-4ef1-810b-27c158ab3c73"
+    },
+    {
+      "record_id": "JPM/2008/page_85.pdf-3",
+      "predicted_answer": 1.0,
+      "gold_answer": 0.10935,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 4575.456,
+      "token_cost_usd": 0.0,
+      "trace_id": "04a335f1-5b22-4c86-84a8-4da189488c44"
+    },
+    {
+      "record_id": "PNC/2013/page_207.pdf-1",
+      "predicted_answer": 2014.0,
+      "gold_answer": 30.44323,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 2945.479,
+      "token_cost_usd": 0.0,
+      "trace_id": "86a0868e-3f21-4393-adee-b92c843f4275"
+    },
+    {
+      "record_id": "CME/2017/page_97.pdf-5",
+      "predicted_answer": 3.0,
+      "gold_answer": 995.0,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 2818.331,
+      "token_cost_usd": 0.0,
+      "trace_id": "7593d52e-cc7f-464a-97e2-9bb372aade49"
+    },
+    {
+      "record_id": "PNC/2013/page_62.pdf-2",
+      "predicted_answer": 2013.0,
+      "gold_answer": 3576.0,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 2696.596,
+      "token_cost_usd": 0.0,
+      "trace_id": "a560eb35-d39f-4ec3-a907-63826a9fa62a"
+    },
+    {
+      "record_id": "AAPL/2004/page_36.pdf-2",
+      "predicted_answer": null,
+      "gold_answer": 0.2,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 1.0,
+        "precision_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0
+      },
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 386.647,
+      "token_cost_usd": 0.0,
+      "trace_id": "79620536-7f6a-4270-b846-406f573ac846"
+    },
+    {
+      "record_id": "PKG/2009/page_65.pdf-4",
+      "predicted_answer": 2014.0,
+      "gold_answer": 0.56197,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 9245.141,
+      "token_cost_usd": 0.0,
+      "trace_id": "5f70942e-7417-47df-9548-e49deb493437"
+    },
+    {
+      "record_id": "LMT/2013/page_74.pdf-4",
+      "predicted_answer": -1.8999999999999773,
+      "gold_answer": -1.9,
+      "execution_correct": true,
+      "program_correct": true,
+      "ir_metrics": {
+        "recall_at_k": 1.0,
+        "precision_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0
+      },
+      "taxonomy": "CORRECT",
+      "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
+      "latency_ms": 13898.067,
+      "token_cost_usd": 0.0,
+      "trace_id": "4fa0f1de-9ddd-4635-af92-ffa0ff541494"
+    },
+    {
+      "record_id": "STT/2011/page_83.pdf-1",
+      "predicted_answer": null,
+      "gold_answer": 114.0,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 311.339,
+      "token_cost_usd": 0.0,
+      "trace_id": "6fb85b9b-b00f-45ba-8ced-40b8dd55cd19"
+    },
+    {
+      "record_id": "MRO/2007/page_149.pdf-2",
+      "predicted_answer": null,
+      "gold_answer": 2057.0,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 347.671,
+      "token_cost_usd": 0.0,
+      "trace_id": "c42d28e6-6efe-47af-a9f6-7575ca189c81"
+    },
+    {
+      "record_id": "AOS/2004/page_11.pdf-2",
+      "predicted_answer": 2014.0,
+      "gold_answer": 0.34011,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.5,
+        "precision_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 0.6131
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.50) failed to retrieve all gold evidence items.",
+      "latency_ms": 8718.494,
+      "token_cost_usd": 0.0,
+      "trace_id": "2b1fcb12-eb0a-4062-84d3-5f038066c8bb"
+    },
+    {
+      "record_id": "C/2010/page_223.pdf-3",
+      "predicted_answer": null,
+      "gold_answer": -0.52485,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.5,
+        "precision_at_k": 0.2,
+        "mrr": 0.2,
+        "ndcg_at_k": 0.2372
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.50) failed to retrieve all gold evidence items.",
+      "latency_ms": 323.018,
+      "token_cost_usd": 0.0,
+      "trace_id": "8a59f7e6-5b04-4d17-92bb-a594003a59be"
+    },
+    {
+      "record_id": "MSI/2006/page_61.pdf-3",
+      "predicted_answer": 2011.0,
+      "gold_answer": 0.35099,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 30601.305,
+      "token_cost_usd": 0.0,
+      "trace_id": "ed2e1de3-d168-4f2f-87eb-1b9a5243b4a1"
+    },
+    {
+      "record_id": "ABMD/2006/page_75.pdf-1",
+      "predicted_answer": null,
+      "gold_answer": 0.19495,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 370.796,
+      "token_cost_usd": 0.0,
+      "trace_id": "2ecc0d19-977c-49aa-a4d9-49c59e0dc631"
+    },
+    {
+      "record_id": "AMAT/2013/page_18.pdf-2",
+      "predicted_answer": 2019.0,
+      "gold_answer": 7.22222,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 8100.933,
+      "token_cost_usd": 0.0,
+      "trace_id": "bfc1c2b1-508e-4c0c-ae2d-8cf9dd5ce29d"
+    },
+    {
+      "record_id": "DVN/2014/page_85.pdf-1",
+      "predicted_answer": 2015.0,
+      "gold_answer": 44.8,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 2650.29,
+      "token_cost_usd": 0.0,
+      "trace_id": "e4620a6e-3b42-419b-8b99-aa91a4b13185"
+    },
+    {
+      "record_id": "SPGI/2018/page_74.pdf-1",
+      "predicted_answer": 2017.0,
+      "gold_answer": 1.15663,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 2922.627,
+      "token_cost_usd": 0.0,
+      "trace_id": "4b41bec1-8177-48fc-a926-d09eec676ad3"
+    },
+    {
+      "record_id": "ZBH/2003/page_58.pdf-3",
+      "predicted_answer": 2003.0,
+      "gold_answer": 0.72825,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 5996.931,
+      "token_cost_usd": 0.0,
+      "trace_id": "273ffdeb-50f5-4259-a9ef-d78ff4186a8a"
+    },
+    {
+      "record_id": "AMT/2005/page_105.pdf-2",
+      "predicted_answer": null,
+      "gold_answer": 4575515.0,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 2930.351,
+      "token_cost_usd": 0.0,
+      "trace_id": "48664d62-9249-4f06-bd48-7b98140a8dd0"
+    },
+    {
+      "record_id": "ETR/2015/page_131.pdf-1",
+      "predicted_answer": 2016.0,
+      "gold_answer": 2.75566,
+      "execution_correct": false,
+      "program_correct": false,
+      "ir_metrics": {
+        "recall_at_k": 0.0,
+        "precision_at_k": 0.0,
+        "mrr": 0.0,
+        "ndcg_at_k": 0.0
+      },
+      "taxonomy": "RETRIEVAL_MISS",
+      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
+      "latency_ms": 4546.144,
+      "token_cost_usd": 0.0,
+      "trace_id": "0fb8cdc0-c4b7-4cb3-8e6a-753eaa10a01a"
+    }
+  ]
+}

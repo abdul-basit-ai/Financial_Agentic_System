@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -48,7 +49,7 @@ class MerkleAuditLedger:
     ) -> AuditEntry:
         entry_idx = len(self.entries)
         prev_hash = self.entries[-1].entry_hash if self.entries else self.GENESIS_HASH
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
 
         # Deterministic state payload hash
         state_hash = self._canonical_hash(state_payload)

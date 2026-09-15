@@ -6,11 +6,11 @@ from typing import Any
 
 try:
     from langgraph.types import Send
-except ImportError:
+except ImportError:  # pragma: no cover - version shims for very old langgraph
     try:
-        from langgraph.constants import Send
-    except ImportError:
-        from langgraph.graph import Send
+        from langgraph.constants import Send  # type: ignore[no-redef]
+    except ImportError:  # type: ignore[no-redef]
+        from langgraph.graph import Send  # type: ignore[attr-defined,no-redef]
 
 from agent.nodes.concurrency import ToolSlot
 from agent.state.schema import AgentStateV1
@@ -31,6 +31,8 @@ def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
     tool_payload = payload.get("payload", {})
 
     result_data: Any = None
+    query_input: Any = None
+    res: Any = None
     success = False
     error_msg: str | None = None
     log_entry = ""

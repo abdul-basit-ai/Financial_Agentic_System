@@ -11,14 +11,14 @@ Validates:
 from __future__ import annotations
 
 import os
+
 import pytest
 
 from ingestion.entity_extractor import extract_entities
-from ingestion.graph_loader import _match_metric, build_graph_payload, GraphLoader
+from ingestion.graph_loader import GraphLoader, _match_metric, build_graph_payload
 from ingestion.table_parser import parse_table_structure
 from ingestion.text_chunker import chunk_context
 from knowledge.vector_store.loader import VectorStoreLoader
-
 
 # =====================================================================
 # Unit Validations (Zero DB Dependency)

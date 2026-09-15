@@ -17,7 +17,10 @@ services:
           cpus: "1.0"
 
   redis:
-    image: redis:7-alpine
+    # RedisStack server (RediSearch + ReJSON modules) — the LangGraph
+    # RedisSaver checkpointer requires them; plain redis:7 silently degrades
+    # HITL pause/resume durability to in-memory checkpointing.
+    image: redis/redis-stack-server:latest
     container_name: financial-agent-redis
     restart: always
     ports:
@@ -46,6 +49,20 @@ services:
         limits:
           memory: 1G
 
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    container_name: financial-agent-mlflow
+    restart: always
+    ports:
+      - "5000:5000"
+    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:///mlflow.db --default-artifact-root /mlflow_artifacts
+    volumes:
+      - mlflow_data:/mlflow_artifacts
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
   api:
     build:
       context: .
@@ -60,6 +77,15 @@ services:
       - neo4j
       - redis
       - pgvector
+      - mlflow
+    # Service-hostname overrides: .env points at localhost (host-oriented),
+    # but inside the compose network the stores are reachable only via their
+    # service names. environment: wins over env_file: in compose.
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - POSTGRES_HOST=pgvector
+      - REDIS_URL=redis://redis:6379/0
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
     deploy:
       resources:
         limits:
@@ -87,3 +113,4 @@ volumes:
   neo4j_logs:
   redis_data:
   pgvector_data:
+  mlflow_data:

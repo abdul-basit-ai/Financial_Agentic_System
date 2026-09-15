@@ -15,7 +15,6 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
 
 from agent.sandbox.prefilter import audit_code_safety
 from agent.sandbox.protocol import ArtifactManifest, SandboxExecutionInput, SandboxOutput
@@ -92,7 +91,7 @@ class SubprocessSandboxRunner:
             return
         bytes_limit = memory_limit_mb * 1024 * 1024
         try:
-            resource.setrlimit(resource.RLIMIT_AS, (bytes_limit, bytes_limit))
+            resource.setrlimit(resource.RLIMIT_AS, (bytes_limit, bytes_limit))  # type: ignore[attr-defined]
         except (ValueError, OSError):
             pass
 

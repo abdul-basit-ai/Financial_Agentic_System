@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 from typing import Any
+
 from pydantic import BaseModel, Field
 
 # Benford's Law theoretical digit frequencies for d in 1..9
@@ -100,7 +101,6 @@ class FinancialRiskEngine:
 
         # 1. Inspect Completed Tool Results
         tool_results = state_dict.get("tool_results", [])
-        sub_task_results = state_dict.get("sub_task_results", {})
 
         # Collect amounts from graph records. Feed Benford DISTINCT
         # observations only: (amount, normalized_amount) pairs are the same

@@ -44,11 +44,18 @@ def _extract_company_candidates(text: str) -> set[str]:
 
 
 def _extract_company_identifier(filename: str) -> str:
+    """Extracts the company identifier from a FinQA filename path prefix.
+
+    FinQA filenames look like 'AMZN/2019/page_33.pdf' or 'V/2008/page_17.pdf'
+    — the first path segment is the company code. Single-letter codes are
+    legitimate (V = Visa, C = Citigroup, T = AT&T), so no minimum length is
+    enforced; only the blacklist filters junk.
+    """
     if not filename:
         return ""
     identifier = re.split(r"[/\\_]", str(filename), maxsplit=1)[0].strip()
     clean_id = identifier.upper()
-    if clean_id in BLACKLIST_IDENTIFIERS or len(clean_id) < 2:
+    if not clean_id or clean_id in BLACKLIST_IDENTIFIERS:
         return ""
     return clean_id
 

@@ -62,7 +62,7 @@ def infer_row_category(label: str) -> str:
 
 def _match_metric(metric_name: str, row_label: str) -> bool:
     """Matches metric name against row label using clean word/delimiter boundaries.
-    
+
     Prevents false positives like 'tax' matching 'pretax' or 'other' matching
     'other operating expenses'.
     """
@@ -447,6 +447,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--splits", nargs="+", default=SPLITS, choices=SPLITS)
     parser.add_argument("--limit-per-split", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=200)
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Build payloads and print load statistics without touching Neo4j "
+        "(as documented in README.md).",
+    )
     parser.add_argument("--uri", default=os.getenv("NEO4J_URI", "bolt://localhost:7687"))
     parser.add_argument("--user", default=os.getenv("NEO4J_USER", "neo4j"))
     parser.add_argument("--password", default=os.getenv("NEO4J_PASSWORD", "password"))
@@ -463,6 +469,25 @@ def chunked(items: list[Any], size: int) -> Iterable[list[Any]]:
 def main() -> None:
     args = parse_args()
     payloads = collect_payloads(args.normalized_dir, args.splits, args.limit_per_split)
+
+    if args.dry_run:
+        # Summarize what WOULD be loaded, without connecting to Neo4j.
+        totals = GraphLoadStats()
+        for p in payloads:
+            totals.reports += 1
+            totals.tables += 1
+            totals.rows += len(p["rows"])
+            totals.values += len(p["values"])
+            totals.chunks += len(p["chunks"])
+            totals.metrics += len(p["metrics"])
+            totals.companies += 1
+        print(
+            "dry-run complete (no database writes): "
+            f"reports={totals.reports}, tables={totals.tables}, rows={totals.rows}, "
+            f"values={totals.values}, chunks={totals.chunks}, metrics={totals.metrics}, "
+            f"companies={totals.companies}"
+        )
+        return
 
     loader = GraphLoader(
         uri=args.uri,

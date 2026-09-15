@@ -15,14 +15,12 @@ import pytest
 from evaluation.evaluator import EvaluationRecord, FinQAEvaluator
 from evaluation.gate import compute_bootstrap_ci, compute_mcnemar_p_value_1df, compute_mcnemar_test
 from evaluation.metrics import (
-    canonicalize_program,
     compute_ir_metrics,
     is_numeric_match,
     is_program_match,
     parse_float_safe,
 )
 from evaluation.taxonomy import FailureCategory, classify_failure
-
 
 # =====================================================================
 # 1. Metric Accuracy & Scale Tests

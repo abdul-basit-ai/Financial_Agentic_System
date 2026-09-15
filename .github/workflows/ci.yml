@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install project + dev dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Type-check (mypy)
+        run: mypy agent/
+
+      - name: Unit + integration tests (offline-safe)
+        run: pytest tests/ -v
+
+      - name: Dependency vulnerability scan (pip-audit)
+        # Advisory data can flag transitive deps between releases; keep the
+        # signal visible without blocking the pipeline on background noise.
+        continue-on-error: true
+        run: pip-audit
+
+      - name: Regression gate (fixture replay)
+        # Replays per-record agent states recorded by evaluation/runner.py
+        # (eval_results/states/). Without fixtures the gate reports and
+        # skips — it must never fall back to a live run inside CI, since
+        # no databases are reachable here.
+        run: |
+          if [ -d eval_results/states ] && [ -n "$(ls -A eval_results/states 2>/dev/null)" ]; then
+            python evaluation/run_regression.py --min-accuracy 0.70
+          else
+            echo "::notice::No recorded states in eval_results/states — skipping regression gate."
+            echo "::notice::Generate fixtures locally with: python evaluation/runner.py --limit 25"
+          fi
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build API image (dry-run, no push)
+        run: docker build -f docker/Dockerfile.api -t financial-agent-api:ci .
+
+      - name: Build UI image (dry-run, no push)
+        run: docker build -f docker/Dockerfile.ui -t financial-agent-ui:ci .
