@@ -210,7 +210,9 @@ _capabilities = [
     "Ephemeral code sandbox (Phase 9)",
 ]
 st.sidebar.markdown(
-    '<div class="cap-chip-row">' + "".join(f'<span class="cap-chip">{html.escape(c)}</span>' for c in _capabilities) + "</div>",
+    '<div class="cap-chip-row">'
+    + "".join(f'<span class="cap-chip">{html.escape(c)}</span>' for c in _capabilities)
+    + "</div>",
     unsafe_allow_html=True,
 )
 
@@ -246,7 +248,9 @@ tab_analyst, tab_compliance = st.tabs(["📈 Analyst workbench", "🛡️ Compli
 # =====================================================================
 with tab_analyst:
     st.markdown("### Multi-hop financial reasoning")
-    st.caption("Ask questions across 10-K tables, MD&A commentary, and numerical calculations.")
+    st.caption(
+        "Ask questions across 10-K tables, MD&A commentary, and numerical calculations."
+    )
 
     preset_query = ""
     preset_company = "ETR"
@@ -255,17 +259,31 @@ with tab_analyst:
 
     with col1:
         with st.container(border=True):
-            st.markdown('<div class="qcard-label">Debt maturity trend</div>', unsafe_allow_html=True)
-            st.caption("Entergy (ETR): percent change in annual long-term debt maturities, 2016 to 2017")
-            if st.button("Run this query", key="preset_etr_debt", use_container_width=True):
+            st.markdown(
+                '<div class="qcard-label">Debt maturity trend</div>',
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "Entergy (ETR): percent change in annual long-term debt maturities, 2016 to 2017"
+            )
+            if st.button(
+                "Run this query", key="preset_etr_debt", use_container_width=True
+            ):
                 preset_query = "What is the percent change in annual long-term debt maturities from 2016 to 2017?"
                 preset_company = "ETR"
 
     with col2:
         with st.container(border=True):
-            st.markdown('<div class="qcard-label">Driver attribution</div>', unsafe_allow_html=True)
-            st.caption("Entergy (ETR): share of the 2007-2008 net revenue change due to rider revenue")
-            if st.button("Run this query", key="preset_etr_rider", use_container_width=True):
+            st.markdown(
+                '<div class="qcard-label">Driver attribution</div>',
+                unsafe_allow_html=True,
+            )
+            st.caption(
+                "Entergy (ETR): share of the 2007-2008 net revenue change due to rider revenue"
+            )
+            if st.button(
+                "Run this query", key="preset_etr_rider", use_container_width=True
+            ):
                 preset_query = "What percent of the change between net revenue in 2007 and 2008 was due to rider revenue?"
                 preset_company = "ETR"
 
@@ -279,7 +297,9 @@ with tab_analyst:
                 "Amazon is not in this FinQA sample — the agent must report "
                 "insufficient evidence instead of fabricating figures."
             )
-            if st.button("Run this query", key="preset_outlier", use_container_width=True):
+            if st.button(
+                "Run this query", key="preset_outlier", use_container_width=True
+            ):
                 preset_query = "Verify the 145% operating margin and goodwill impairment for acquisition."
                 preset_company = "AMZN"
 
@@ -288,17 +308,20 @@ with tab_analyst:
         c1, c2 = st.columns([4, 1])
         user_query = c1.text_area(
             "Natural language financial query",
-            value=preset_query or "What is the percent change in annual long-term debt maturities from 2016 to 2017?",
+            value=preset_query
+            or "What is the percent change in annual long-term debt maturities from 2016 to 2017?",
             height=85,
         )
         company_id = c2.text_input("Ticker / ID", value=preset_company)
-        submitted = st.form_submit_button("Run analysis", use_container_width=True, type="primary")
+        submitted = st.form_submit_button(
+            "Run analysis", use_container_width=True, type="primary"
+        )
 
     if submitted and user_query.strip():
         thread_id = f"ui_thread_{uuid.uuid4().hex[:8]}"
         st.markdown(
             f'<div class="session-meta">Session thread <code>{html.escape(thread_id)}</code> '
-            f'for <strong>{html.escape(company_id)}</strong></div>',
+            f"for <strong>{html.escape(company_id)}</strong></div>",
             unsafe_allow_html=True,
         )
 
@@ -315,7 +338,9 @@ with tab_analyst:
                 "thread_id": thread_id,
             }
 
-            with st.status("Initializing reasoning trajectory…", expanded=True) as status_box:
+            with st.status(
+                "Initializing reasoning trajectory…", expanded=True
+            ) as status_box:
                 try:
                     for event_envelope in stream_sse_query(api_base_url, payload):
                         event_type = event_envelope.get("event")
@@ -324,7 +349,11 @@ with tab_analyst:
                         if event_type == "lifecycle":
                             status_box.update(label="Planning execution strategy…")
                             st.markdown(
-                                timeline_item("plan", "Planner", "Decomposed the question into an execution graph."),
+                                timeline_item(
+                                    "plan",
+                                    "Planner",
+                                    "Decomposed the question into an execution graph.",
+                                ),
                                 unsafe_allow_html=True,
                             )
 
@@ -333,13 +362,17 @@ with tab_analyst:
                             latest_log = data.get("latest_log", "")
                             status_box.update(label=f"Executing node: {node_name}")
                             st.markdown(
-                                timeline_item("node", node_name, latest_log or "Step completed."),
+                                timeline_item(
+                                    "node", node_name, latest_log or "Step completed."
+                                ),
                                 unsafe_allow_html=True,
                             )
 
                         elif event_type == "interrupt":
                             is_paused_for_hitl = True
-                            status_box.update(label="Paused for compliance review", state="error")
+                            status_box.update(
+                                label="Paused for compliance review", state="error"
+                            )
                             st.markdown(
                                 timeline_item(
                                     "interrupt",
@@ -355,18 +388,31 @@ with tab_analyst:
 
                         elif event_type == "complete":
                             if not is_paused_for_hitl:
-                                status_box.update(label="Analysis complete", state="complete")
+                                status_box.update(
+                                    label="Analysis complete", state="complete"
+                                )
 
                         elif event_type == "error":
-                            status_box.update(label="Execution error encountered", state="error")
+                            status_box.update(
+                                label="Execution error encountered", state="error"
+                            )
                             st.markdown(
-                                timeline_item("error", data.get("error_type", "Error"), data.get("message", "")),
+                                timeline_item(
+                                    "error",
+                                    data.get("error_type", "Error"),
+                                    data.get("message", ""),
+                                ),
                                 unsafe_allow_html=True,
                             )
 
                 except Exception as ex:
-                    status_box.update(label="Failed to connect to backend", state="error")
-                    st.markdown(timeline_item("error", "Connection failure", str(ex)), unsafe_allow_html=True)
+                    status_box.update(
+                        label="Failed to connect to backend", state="error"
+                    )
+                    st.markdown(
+                        timeline_item("error", "Connection failure", str(ex)),
+                        unsafe_allow_html=True,
+                    )
 
         # Render Final Synthesized Answer
         if final_answer_text:
@@ -380,7 +426,9 @@ with tab_analyst:
 # =====================================================================
 with tab_compliance:
     st.markdown("### Compliance & risk review queue")
-    st.caption("Inspect state snapshots paused by the Phase 8 risk engine. Approve, reject, or inject overrides.")
+    st.caption(
+        "Inspect state snapshots paused by the Phase 8 risk engine. Approve, reject, or inject overrides."
+    )
 
     # Fetch Pending Approvals from FastAPI
     approvals_endpoint = f"{api_base_url.rstrip('/')}/api/v1/approvals"
@@ -407,12 +455,18 @@ with tab_compliance:
             st.rerun()
 
     if fetch_error:
-        st.error(f"Unable to fetch approvals queue from `{approvals_endpoint}`: {fetch_error}")
+        st.error(
+            f"Unable to fetch approvals queue from `{approvals_endpoint}`: {fetch_error}"
+        )
 
     if not pending_items and not fetch_error:
-        st.success("Zero pending approvals. All autonomous agent tasks are within safe risk parameters.")
+        st.success(
+            "Zero pending approvals. All autonomous agent tasks are within safe risk parameters."
+        )
     elif pending_items:
-        st.warning(f"{len(pending_items)} task(s) currently paused awaiting human review.")
+        st.warning(
+            f"{len(pending_items)} task(s) currently paused awaiting human review."
+        )
 
         for idx, item in enumerate(pending_items, start=1):
             with st.expander(
@@ -428,8 +482,13 @@ with tab_compliance:
 
                     st.markdown("**Risk engine flags**")
                     if item["trigger_reasons"]:
-                        flags_html = "".join(badge(reason, "rose") for reason in item["trigger_reasons"])
-                        st.markdown(f'<div class="badge-row">{flags_html}</div>', unsafe_allow_html=True)
+                        flags_html = "".join(
+                            badge(reason, "rose") for reason in item["trigger_reasons"]
+                        )
+                        st.markdown(
+                            f'<div class="badge-row">{flags_html}</div>',
+                            unsafe_allow_html=True,
+                        )
                     else:
                         st.markdown(
                             f'<div class="badge-row">{badge("Materiality / confidence bound", "amber")}</div>',
@@ -450,7 +509,9 @@ with tab_compliance:
                         label_visibility="collapsed",
                     )
                     analyst_name = st.text_input(
-                        "Analyst ID", value="analyst_compliance", key=f"analyst_{item['thread_id']}"
+                        "Analyst ID",
+                        value="analyst_compliance",
+                        key=f"analyst_{item['thread_id']}",
                     )
                     feedback_notes = st.text_area(
                         "Review feedback / rationale",
@@ -468,7 +529,9 @@ with tab_compliance:
                         default_calls = item.get("pending_tool_calls") or []
                         override_raw = st.text_area(
                             "Edited tool calls (JSON list)",
-                            value=json.dumps({"tool_calls": default_calls}, indent=2, default=str),
+                            value=json.dumps(
+                                {"tool_calls": default_calls}, indent=2, default=str
+                            ),
                             height=260,
                             key=f"override_{item['thread_id']}",
                         )
@@ -476,7 +539,9 @@ with tab_compliance:
                             override_payload = json.loads(override_raw)
                             edited = override_payload.get("tool_calls")
                             if not isinstance(edited, list) or not all(
-                                isinstance(c, dict) and "task_id" in c and "target_tool" in c
+                                isinstance(c, dict)
+                                and "task_id" in c
+                                and "target_tool" in c
                                 for c in edited
                             ):
                                 raise ValueError(
@@ -504,11 +569,17 @@ with tab_compliance:
                             "overrides": override_payload,
                         }
 
-                        with st.spinner("Submitting decision and resuming state machine…"):
+                        with st.spinner(
+                            "Submitting decision and resuming state machine…"
+                        ):
                             try:
-                                r_res = requests.post(resume_url, json=post_data, timeout=30.0)
+                                r_res = requests.post(
+                                    resume_url, json=post_data, timeout=30.0
+                                )
                                 r_res.raise_for_status()
-                                st.success(f"Thread {item['thread_id']} resumed successfully.")
+                                st.success(
+                                    f"Thread {item['thread_id']} resumed successfully."
+                                )
                                 st.rerun()
                             except Exception as ex:
                                 st.error(f"Failed to resume thread: {str(ex)}")

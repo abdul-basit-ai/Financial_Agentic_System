@@ -49,7 +49,9 @@ class SandboxOutput(BaseModel):
     stdout: str = Field(default="", description="Captured standard output")
     stderr: str = Field(default="", description="Captured standard error")
     exit_code: int = Field(default=0, description="Process termination return code")
-    execution_time_ms: float = Field(default=0.0, description="Measured wall-clock latency")
+    execution_time_ms: float = Field(
+        default=0.0, description="Measured wall-clock latency"
+    )
     parsed_result: Any | None = Field(
         default=None,
         description="Parsed JSON payload if stdout ends with a valid JSON document",
@@ -57,14 +59,19 @@ class SandboxOutput(BaseModel):
     artifacts: list[ArtifactManifest] = Field(
         default_factory=list, description="Output files generated in the scratch space"
     )
-    timed_out: bool = Field(default=False, description="Whether execution was aborted by timeout")
+    timed_out: bool = Field(
+        default=False, description="Whether execution was aborted by timeout"
+    )
     oom_killed: bool = Field(
-        default=False, description="Whether process was terminated due to memory exhaustion"
+        default=False,
+        description="Whether process was terminated due to memory exhaustion",
     )
 
     def extract_json_result(self) -> Any | None:
         """Attempts to parse the last non-empty line of stdout as a structured JSON object."""
-        lines = [line.strip() for line in self.stdout.strip().splitlines() if line.strip()]
+        lines = [
+            line.strip() for line in self.stdout.strip().splitlines() if line.strip()
+        ]
         if not lines:
             return None
         for line in reversed(lines):

@@ -57,20 +57,24 @@ async def _execute_background_job(
         curr_state = agent.get_state(config)
         is_paused = bool(curr_state and curr_state.next)
 
-        JOB_STORE[job_id].update({
-            "status": "SUSPENDED_HITL" if is_paused else "COMPLETED",
-            "updated_at": datetime.now(UTC).isoformat(),
-            "result": final_state,
-            "execution_time_ms": round(duration_ms, 2),
-        })
+        JOB_STORE[job_id].update(
+            {
+                "status": "SUSPENDED_HITL" if is_paused else "COMPLETED",
+                "updated_at": datetime.now(UTC).isoformat(),
+                "result": final_state,
+                "execution_time_ms": round(duration_ms, 2),
+            }
+        )
     except Exception as exc:
         duration_ms = (time.perf_counter() - start_time) * 1000.0
-        JOB_STORE[job_id].update({
-            "status": "FAILED",
-            "updated_at": datetime.now(UTC).isoformat(),
-            "error": f"{type(exc).__name__}: {str(exc)}",
-            "execution_time_ms": round(duration_ms, 2),
-        })
+        JOB_STORE[job_id].update(
+            {
+                "status": "FAILED",
+                "updated_at": datetime.now(UTC).isoformat(),
+                "error": f"{type(exc).__name__}: {str(exc)}",
+                "execution_time_ms": round(duration_ms, 2),
+            }
+        )
 
 
 # =====================================================================
@@ -83,7 +87,9 @@ async def _execute_background_job(
     summary="Real-time Server-Sent Events (SSE) reasoning stream",
     response_class=StreamingResponse,
 )
-async def query_stream_endpoint(request: Request, body: QueryRequest) -> StreamingResponse:
+async def query_stream_endpoint(
+    request: Request, body: QueryRequest
+) -> StreamingResponse:
     agent = request.app.state.agent
     initial_state = AgentStateV1(
         input=body.query,
@@ -228,13 +234,17 @@ async def list_approvals_endpoint(request: Request) -> ApprovalListResponse:
         # Select threads paused on interrupts or marked with PENDING HITL status
         if is_paused or hitl_status == "PENDING":
             scratchpad = snapshot.values.get("scratchpad", [])
-            trigger_reasons = [line for line in scratchpad if line.strip().startswith("• [")]
+            trigger_reasons = [
+                line for line in scratchpad if line.strip().startswith("• [")
+            ]
 
             approval_items.append(
                 ApprovalItem(
                     thread_id=thread_id,
                     trace_id=snapshot.values.get("trace_id", "unknown"),
-                    input_query=meta.get("input_query", snapshot.values.get("input", "")),
+                    input_query=meta.get(
+                        "input_query", snapshot.values.get("input", "")
+                    ),
                     company_identifier=meta.get("company_identifier"),
                     hitl_status=hitl_status,
                     paused_nodes=list(snapshot.next) if snapshot.next else [],
@@ -266,7 +276,9 @@ async def list_approvals_endpoint(request: Request) -> ApprovalListResponse:
     response_model=ThreadStateResponse,
     summary="Inspect state and check for active HITL suspensions",
 )
-async def get_thread_state_endpoint(request: Request, thread_id: str) -> ThreadStateResponse:
+async def get_thread_state_endpoint(
+    request: Request, thread_id: str
+) -> ThreadStateResponse:
     agent = request.app.state.agent
     config = {"configurable": {"thread_id": thread_id}}
 
@@ -331,7 +343,9 @@ async def resume_thread_endpoint(
     try:
         if Command is not None:
             resume_cmd: Any = Command(resume=decision_payload)
-            resumed_output = await asyncio.to_thread(agent.invoke, resume_cmd, config=config)
+            resumed_output = await asyncio.to_thread(
+                agent.invoke, resume_cmd, config=config
+            )
         else:
             agent.update_state(config, {"hitl_status": body.action})
             resumed_output = await asyncio.to_thread(agent.invoke, None, config=config)

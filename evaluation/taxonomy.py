@@ -60,9 +60,7 @@ def classify_failure(
     # Merge sequential and parallel execution envelopes (Phase 7 consistency)
     tool_results = list(tool_results)
     seen = {
-        (r.get("task_id"), r.get("tool_name"))
-        for r in tool_results
-        if r.get("task_id")
+        (r.get("task_id"), r.get("tool_name")) for r in tool_results if r.get("task_id")
     }
     for tid, env in (state.get("sub_task_results") or {}).items():
         if isinstance(env, dict) and (tid, env.get("tool_name")) not in seen:
@@ -75,9 +73,9 @@ def classify_failure(
     ]
     candidate_answer = math_results[-1] if math_results else final_answer
 
-    is_exe_correct = is_numeric_match(candidate_answer, gold_answer) or is_numeric_match(
-        final_answer, gold_answer
-    )
+    is_exe_correct = is_numeric_match(
+        candidate_answer, gold_answer
+    ) or is_numeric_match(final_answer, gold_answer)
 
     if is_exe_correct:
         return TaxonomyAttribution(
@@ -112,11 +110,16 @@ def classify_failure(
         return TaxonomyAttribution(
             category=FailureCategory.PLANNING_ERROR,
             explanation="Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-            diagnostics={"executed_expressions": executed_expressions, "gold_program": gold_program},
+            diagnostics={
+                "executed_expressions": executed_expressions,
+                "gold_program": gold_program,
+            },
         )
 
     # 6. Causal Step 3: Arithmetic Execution Failure
-    if any(r.get("tool_name") == "safe_math" and not r.get("success") for r in tool_results):
+    if any(
+        r.get("tool_name") == "safe_math" and not r.get("success") for r in tool_results
+    ):
         return TaxonomyAttribution(
             category=FailureCategory.ARITHMETIC_ERROR,
             explanation="Safe math AST parser failed on division by zero, float overflow, or syntax error.",

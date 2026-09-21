@@ -74,7 +74,9 @@ class SafeMathEvaluator:
 
     def _eval_node(self, node: ast.AST, current_depth: int = 0) -> float:
         if current_depth > self.max_depth:
-            raise ASTSecurityError(f"Expression exceeds maximum recursion depth of {self.max_depth}")
+            raise ASTSecurityError(
+                f"Expression exceeds maximum recursion depth of {self.max_depth}"
+            )
 
         if isinstance(node, ast.Expression):
             return self._eval_node(node.body, current_depth + 1)
@@ -87,7 +89,9 @@ class SafeMathEvaluator:
         if isinstance(node, ast.BinOp):
             op_type: type[Any] = type(node.op)
             if op_type not in SAFE_OPERATORS:
-                raise ASTSecurityError(f"Unsupported binary operator: {op_type.__name__}")
+                raise ASTSecurityError(
+                    f"Unsupported binary operator: {op_type.__name__}"
+                )
             left = self._eval_node(node.left, current_depth + 1)
             right = self._eval_node(node.right, current_depth + 1)
             if op_type is ast.Div and right == 0.0:
@@ -97,7 +101,9 @@ class SafeMathEvaluator:
         if isinstance(node, ast.UnaryOp):
             op_type = type(node.op)
             if op_type not in SAFE_OPERATORS:
-                raise ASTSecurityError(f"Unsupported unary operator: {op_type.__name__}")
+                raise ASTSecurityError(
+                    f"Unsupported unary operator: {op_type.__name__}"
+                )
             operand = self._eval_node(node.operand, current_depth + 1)
             return float(SAFE_OPERATORS[op_type](operand))
 
@@ -144,7 +150,11 @@ def evaluate_math(expression: str) -> SafeMathOutput:
     """Pure calculation function without instrumentation."""
     evaluator = SafeMathEvaluator()
     result = evaluator.evaluate(expression)
-    formatted = f"{result:,.4f}".rstrip("0").rstrip(".") if "." in f"{result:,.4f}" else f"{result:,.0f}"
+    formatted = (
+        f"{result:,.4f}".rstrip("0").rstrip(".")
+        if "." in f"{result:,.4f}"
+        else f"{result:,.0f}"
+    )
     return SafeMathOutput(expression=expression, result=result, formatted=formatted)
 
 

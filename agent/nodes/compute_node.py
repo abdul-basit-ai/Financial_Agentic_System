@@ -30,8 +30,10 @@ def _pick_numeric_value(
     Selection order:
     1. The dispatching task's fiscal year — matched either on the parsed
        Value.year or on the row LABEL being that year (FinQA maturity
-       schedules put years in row labels with no parseable header).
-    2. Label overlap with the question terms.
+       schedules put years in row labels with no parseable header). Within
+       the year-matched set, column-header relevance picks WHICH column
+       (a year filter alone still leaves every column of the row tied).
+    2. Row-label + column-header overlap with the question terms.
     3. First record (previous behavior).
     """
     if not records:
@@ -39,11 +41,17 @@ def _pick_numeric_value(
 
     if task_year is not None:
         year_str = str(task_year)
-        for rec in records:
-            if rec.get("year") == task_year or str(rec.get("row_label", "")).strip() == year_str:
-                value = _record_amount(rec)
-                if value is not None:
-                    return value
+        year_matched = [
+            rec
+            for rec in records
+            if rec.get("year") == task_year
+            or str(rec.get("row_label", "")).strip() == year_str
+        ]
+        if year_matched:
+            best = best_matching_record(year_matched, q_terms)
+            value = _record_amount(best) if best is not None else None
+            if value is not None:
+                return value
 
     best = best_matching_record(records, q_terms)
     if best is None:
@@ -123,7 +131,9 @@ def compute_node(state: AgentStateV1) -> dict[str, Any]:
     for call in state.tool_calls:
         if call.get("target_tool") in {"graph_retrieval", "vector_retrieval"}:
             year = call.get("payload", {}).get("year")
-            task_years[str(call.get("task_id"))] = int(year) if year is not None else None
+            task_years[str(call.get("task_id"))] = (
+                int(year) if year is not None else None
+            )
 
     for call in state.tool_calls:
         if call.get("target_tool") == "safe_math" and call.get("status") == "PENDING":
@@ -148,13 +158,15 @@ def compute_node(state: AgentStateV1) -> dict[str, Any]:
                     f"returned no records)."
                 )
                 task_id = call.get("task_id", "task_math")
-                executed_results.append({
-                    "task_id": task_id,
-                    "tool_name": "safe_math",
-                    "success": False,
-                    "data": None,
-                    "error": error_msg,
-                })
+                executed_results.append(
+                    {
+                        "task_id": task_id,
+                        "tool_name": "safe_math",
+                        "success": False,
+                        "data": None,
+                        "error": error_msg,
+                    }
+                )
                 scratchpad_logs.append(
                     f"[Safe Math] Skipped '{raw_expr}' -> {error_msg}"
                 )
@@ -174,7 +186,9 @@ def compute_node(state: AgentStateV1) -> dict[str, Any]:
             sub_task_updates[task_id] = envelope
 
             val = result.data.formatted if result.data else "ERROR"
-            scratchpad_logs.append(f"[Safe Math] Evaluated '{concrete_expr}' -> Result: {val}")
+            scratchpad_logs.append(
+                f"[Safe Math] Evaluated '{concrete_expr}' -> Result: {val}"
+            )
         else:
             remaining_calls.append(dict(call))
 

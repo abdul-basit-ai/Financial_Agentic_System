@@ -57,7 +57,9 @@ def test_multi_hop_yoy_calculation_orchestration(agent_runner) -> None:
     assert final_output["is_terminal"] is True
     assert final_output["final_answer"] is not None
     # Verify math calculation took place
-    math_results = [r for r in final_output["tool_results"] if r.get("tool_name") == "safe_math"]
+    math_results = [
+        r for r in final_output["tool_results"] if r.get("tool_name") == "safe_math"
+    ]
     assert len(math_results) >= 1
     assert math_results[0]["success"] is True
 
@@ -81,6 +83,7 @@ def test_graph_checkpointer_persistence(agent_runner) -> None:
     assert checkpoint_state is not None
     assert checkpoint_state.values["input"] == initial_state.input
     assert checkpoint_state.values["trace_id"] == output_1["trace_id"]
+
 
 # =====================================================================
 # Zero-Evidence Synthesis Honesty Tests
@@ -124,8 +127,11 @@ def test_decomposer_yoy_without_metric_adds_narrative_backup() -> None:
     assert "vector_retrieval" in tools
 
 
-def test_decomposer_clean_single_hop_stays_single() -> None:
-    """Strong tabular-anchor query must NOT trigger extra vector fan-out."""
+def test_decomposer_clean_single_hop_is_anchored() -> None:
+    """Single-hop plans are also anchored: vector first, graph depends on it."""
     out = decompose_query("What was Apple net sales in 2002?", company="AAPL")
-    assert len(out.sub_tasks) == 1
-    assert out.sub_tasks[0].target_tool == "graph_retrieval"
+    assert len(out.sub_tasks) == 2
+    assert out.sub_tasks[0].target_tool == "vector_retrieval"
+    assert out.sub_tasks[0].query_payload["company_identifier"] == "AAPL"
+    assert out.sub_tasks[1].target_tool == "graph_retrieval"
+    assert out.sub_tasks[1].dependencies == ["task_1"]

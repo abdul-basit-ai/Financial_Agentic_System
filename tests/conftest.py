@@ -10,8 +10,6 @@ from __future__ import annotations
 
 import os
 
-import pytest
-
 
 def pytest_configure(config) -> None:
     if os.getenv("FINAGENT_TESTS_LLM", "").strip() != "1":

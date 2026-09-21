@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import Any
 
 from agent.llm import extract_numerals, invoke_llm, is_llm_enabled
+from agent.nodes.relevance import question_terms, relevance_hits
 from agent.prompts import load_prompt
 from agent.state.schema import AgentStateV1
 
@@ -73,15 +74,26 @@ def synthesize_node(state: AgentStateV1) -> dict[str, Any]:
             if r.get("task_id")
         }
         parallel_only = [
-            env for tid, env in state.sub_task_results.items()
+            env
+            for tid, env in state.sub_task_results.items()
             if isinstance(env, dict) and (tid, env.get("tool_name")) not in seen
         ]
         return state.tool_results + parallel_only
 
     all_results = _all_envelopes()
-    math_results = [r for r in all_results if r.get("tool_name") == "safe_math" and r.get("success")]
-    graph_results = [r for r in all_results if r.get("tool_name") == "graph_retrieval" and r.get("success")]
-    vector_results = [r for r in all_results if r.get("tool_name") == "vector_retrieval" and r.get("success")]
+    math_results = [
+        r for r in all_results if r.get("tool_name") == "safe_math" and r.get("success")
+    ]
+    graph_results = [
+        r
+        for r in all_results
+        if r.get("tool_name") == "graph_retrieval" and r.get("success")
+    ]
+    vector_results = [
+        r
+        for r in all_results
+        if r.get("tool_name") == "vector_retrieval" and r.get("success")
+    ]
 
     # Verification: Do we have sufficient data to answer?
     # A tool can exit cleanly (success=True) yet return zero records — that is
@@ -100,61 +112,52 @@ def synthesize_node(state: AgentStateV1) -> dict[str, Any]:
     graph_results = [r for r in graph_results if _has_payload(r)]
     vector_results = [r for r in vector_results if _has_payload(r)]
 
-    # Relevance filter: retrieved evidence must share signal with the question.
-    # Without this, unrelated rows (e.g. leftover test fixtures) get parroted
-    # as "verified" citations for a question they don't answer.
-    def _question_terms(text: str) -> set[str]:
-        stop = {
-            "what", "was", "the", "in", "of", "for", "and", "a", "an", "to",
-            "is", "were", "on", "by", "with", "from", "at", "did", "how",
-            "much", "many", "that", "this", "company", "fiscal", "year",
-        }
-        return {
-            w for w in str(text).lower().replace("%", " ").replace(",", " ").split()
-            if len(w) > 2 and w not in stop and not w.isdigit()
-        }
+    # Relevance RANKING: evidence sharing signal with the question is surfaced
+    # first, so citations and template answers draw from the matching rows.
+    # Uses the shared relevance helpers (same term normalization as compute's
+    # value picking: plural-folded, year-aware). Records/chunks with zero
+    # overlap are DEMOTED, not discarded — exact-token filtering used to drop
+    # correct evidence on vocabulary mismatches (revenue/revenues) and empty
+    # envelopes flipped well-retrieved records into "insufficient evidence"
+    # loops. Parroting unrelated rows is a precision concern; the grounding
+    # gate and ranking handle it at far lower cost than recall loss.
+    q_terms = question_terms(state.input)
 
-    q_terms = _question_terms(state.input)
+    def _hits(text: str) -> int:
+        return relevance_hits(text, q_terms)
 
-    def _relevance_hits(evidence_text: str) -> int:
-        ev_terms = _question_terms(evidence_text)
-        return len(q_terms & ev_terms)
-
-    # Graph records: keep only rows whose label overlaps the question
-    # (e.g. question mentions "goodwill" -> keep "goodwill" rows), unless the
-    # question has no usable terms at all.
-    def _filter_graph_records(r: dict[str, Any]) -> dict[str, Any]:
+    def _rank_graph_records(r: dict[str, Any]) -> dict[str, Any]:
         data = r.get("data") or {}
         records = data.get("records", [])
         if not q_terms:
             return r
-        relevant = [
-            rec for rec in records
-            if _relevance_hits(f"{rec.get('row_label', '')} {rec.get('company', '')}") >= 1
-        ]
+        ranked = sorted(
+            records,
+            key=lambda rec: _hits(
+                f"{rec.get('row_label', '')} {rec.get('column_header', '')}"
+            ),
+            reverse=True,
+        )
         filtered = dict(r)
-        filtered["data"] = {**data, "records": relevant}
+        filtered["data"] = {**data, "records": ranked}
         return filtered
 
-    # Vector chunks: similarity threshold already applied at retrieval; here
-    # require at least one question-term overlap in the chunk text.
-    def _filter_vector_chunks(r: dict[str, Any]) -> dict[str, Any]:
+    def _rank_vector_chunks(r: dict[str, Any]) -> dict[str, Any]:
         data = r.get("data") or {}
         chunks = data.get("chunks", [])
         if not q_terms:
             return r
-        relevant = [
-            ch for ch in chunks
-            if _relevance_hits(ch.get("text_content", "")) >= 1
-        ]
+        ranked = sorted(
+            chunks,
+            key=lambda ch: _hits(ch.get("text_content", "")),
+            reverse=True,
+        )
         filtered = dict(r)
-        filtered["data"] = {**data, "chunks": relevant}
+        filtered["data"] = {**data, "chunks": ranked}
         return filtered
 
-    graph_results = [_filter_graph_records(r) for r in graph_results]
-    graph_results = [r for r in graph_results if r["data"].get("records")]
-    vector_results = [_filter_vector_chunks(r) for r in vector_results]
-    vector_results = [r for r in vector_results if r["data"].get("chunks")]
+    graph_results = [_rank_graph_records(r) for r in graph_results]
+    vector_results = [_rank_vector_chunks(r) for r in vector_results]
 
     has_sufficient_evidence = bool(math_results or graph_results or vector_results)
     failed_results = [r for r in state.tool_results if not r.get("success")]
@@ -244,22 +247,29 @@ def _build_evidence_bundle(
             d = m.get("data", {})
             entry = f"• Formula: {d.get('expression')} = {d.get('formatted')}"
             lines.append(entry)
-            corpus.append(f"{d.get('expression')} {d.get('formatted')} {d.get('result')}")
+            corpus.append(
+                f"{d.get('expression')} {d.get('formatted')} {d.get('result')}"
+            )
 
     if graph_results:
         lines.append("Verified Filing Data (table line items):")
         for g in graph_results:
             records = g.get("data", {}).get("records", [])
-            for rec in records[:5]:
+            # Relevance ranking upstream puts matching rows first; 10 slots
+            # keep the matched row's sibling columns visible for per-ratio
+            # questions ("payments volume" AND "transactions" live in one row).
+            for rec in records[:10]:
+                column = rec.get("column_header")
+                column_part = f" [{column}]" if column else ""
                 entry = (
                     f"• {rec.get('company')} ({rec.get('year') or 'FY'}): "
-                    f"{rec.get('row_label')} = {rec.get('amount')} "
+                    f"{rec.get('row_label')}{column_part} = {rec.get('amount')} "
                     f"(Normalized: {rec.get('normalized_amount')})"
                 )
                 lines.append(entry)
                 corpus.append(
                     f"{rec.get('company')} {rec.get('year')} {rec.get('row_label')} "
-                    f"{rec.get('amount')} {rec.get('normalized_amount')}"
+                    f"{column or ''} {rec.get('amount')} {rec.get('normalized_amount')}"
                 )
 
     if vector_results:
@@ -293,7 +303,9 @@ def _synthesize_with_llm(
         "no markdown tables, no code fences."
     )
 
-    result = invoke_llm(system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=900)
+    result = invoke_llm(
+        system_prompt=system_prompt, user_prompt=user_prompt, max_tokens=900
+    )
     if result is None:
         return None, ""
 
@@ -307,7 +319,10 @@ def _synthesize_with_llm(
         return None, f"{log} Draft empty; rejected."
 
     if not _is_grounded(answer, grounding_corpus):
-        return None, f"{log} Draft contained ungrounded numerals; rejected (no-hallucination policy)."
+        return (
+            None,
+            f"{log} Draft contained ungrounded numerals; rejected (no-hallucination policy).",
+        )
 
     return answer, log
 
@@ -331,10 +346,13 @@ def _deterministic_answer(
         parts.append("\nVerified Filing Data:")
         for g in graph_results:
             records = g.get("data", {}).get("records", [])
-            for rec in records[:5]:
+            for rec in records[:10]:
+                column = rec.get("column_header")
+                column_part = f" [{column}]" if column else ""
                 parts.append(
                     f"• {rec.get('company')} ({rec.get('year') or 'FY'}): "
-                    f"{rec.get('row_label')} = {rec.get('amount')} (Normalized: {rec.get('normalized_amount')})"
+                    f"{rec.get('row_label')}{column_part} = {rec.get('amount')} "
+                    f"(Normalized: {rec.get('normalized_amount')})"
                 )
 
     if vector_results:
@@ -347,7 +365,9 @@ def _deterministic_answer(
     return "\n".join(parts)
 
 
-def _insufficient_evidence_answer(state: AgentStateV1, failed_results: list[dict[str, Any]]) -> str:
+def _insufficient_evidence_answer(
+    state: AgentStateV1, failed_results: list[dict[str, Any]]
+) -> str:
     """Builds an explicit 'cannot answer' response per the synthesizer prompt's
     Completeness Verification principle — never fabricate figures."""
     parts = [f"Financial Analysis for: {state.input}\n"]
@@ -358,7 +378,9 @@ def _insufficient_evidence_answer(state: AgentStateV1, failed_results: list[dict
     if failed_results:
         parts.append("\nWhat failed:")
         for r in failed_results[:5]:
-            parts.append(f"• {r.get('tool_name')} (task {r.get('task_id')}): {r.get('error') or 'no matching data found'}")
+            parts.append(
+                f"• {r.get('tool_name')} (task {r.get('task_id')}): {r.get('error') or 'no matching data found'}"
+            )
     parts.append(
         "\nSuggestion: verify the company identifier, fiscal years, or metric "
         "naming and try again."

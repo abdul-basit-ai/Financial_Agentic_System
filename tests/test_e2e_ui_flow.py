@@ -114,7 +114,9 @@ def test_e2e_hitl_approval_queue_and_resume(test_client: TestClient) -> None:
     approval_data = approvals_res.json()
 
     assert approval_data["total_pending"] >= 1
-    target_item = next((it for it in approval_data["items"] if it["thread_id"] == thread_id), None)
+    target_item = next(
+        (it for it in approval_data["items"] if it["thread_id"] == thread_id), None
+    )
     assert target_item is not None
     assert target_item["hitl_status"] == "PENDING"
     assert any("Impossible margin" in r for r in target_item["trigger_reasons"])
@@ -127,7 +129,9 @@ def test_e2e_hitl_approval_queue_and_resume(test_client: TestClient) -> None:
         "overrides": {},
     }
 
-    resume_res = test_client.post(f"/api/v1/threads/{thread_id}/resume", json=resume_payload)
+    resume_res = test_client.post(
+        f"/api/v1/threads/{thread_id}/resume", json=resume_payload
+    )
     assert resume_res.status_code == 200
     res_data = resume_res.json()
     assert res_data["thread_id"] == thread_id

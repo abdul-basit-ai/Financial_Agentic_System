@@ -119,9 +119,7 @@ def main() -> int:
     )
 
     if accuracy < args.min_accuracy:
-        print(
-            f"FAIL: accuracy {accuracy:.2%} below threshold {args.min_accuracy:.2%}"
-        )
+        print(f"FAIL: accuracy {accuracy:.2%} below threshold {args.min_accuracy:.2%}")
         return 1
 
     print("PASS")

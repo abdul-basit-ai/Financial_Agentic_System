@@ -47,6 +47,11 @@ class AgentStateV1(BaseModel):
     company_identifier: str | None = Field(
         default=None, description="Primary company target extracted from context"
     )
+    record_id: str | None = Field(
+        default=None,
+        description="Anchoring FinQA record id (the filing the question is about), "
+        "when the caller knows it — scopes retrieval to one document",
+    )
     iteration_count: int = Field(
         default=0, ge=0, description="Number of completed graph reasoning cycles"
     )
@@ -74,9 +79,9 @@ class AgentStateV1(BaseModel):
     )
 
     # Human-in-the-Loop & Execution Control
-    hitl_status: Literal["NONE", "PENDING", "APPROVED", "APPROVE", "REJECTED", "REJECT", "EDIT"] = Field(
-        default="NONE", description="Phase 8 approval gate status"
-    )
+    hitl_status: Literal[
+        "NONE", "PENDING", "APPROVED", "APPROVE", "REJECTED", "REJECT", "EDIT"
+    ] = Field(default="NONE", description="Phase 8 approval gate status")
     risk_evaluated: bool = Field(
         default=False,
         description="True once eval_risk ran in the current iteration (prevents re-eval loops after compute)",

@@ -28,7 +28,9 @@ def read_memory_node(state: AgentStateV1) -> dict[str, Any]:
 
     if result.success and result.data:
         for ep in result.data.episodic_memories:
-            memory_refs.append({"type": "episodic", "id": ep["id"], "summary": ep["summary"]})
+            memory_refs.append(
+                {"type": "episodic", "id": ep["id"], "summary": ep["summary"]}
+            )
             scratchpad_entries.append(f"[Memory - Past Episode] {ep['summary']}")
 
         if result.data.matched_archetype:
@@ -50,7 +52,11 @@ def write_memory_node(state: AgentStateV1) -> dict[str, Any]:
         engine = MemoryPromotionEngine()
         session_id = f"sess_{state.trace_id[:8]}"
         promoted_id = engine.promote_session(session_id=session_id, state=state)
-        status_msg = f"[Memory Promotion] Promoted episode ID #{promoted_id}" if promoted_id else "[Memory Promotion] Skipped promotion."
+        status_msg = (
+            f"[Memory Promotion] Promoted episode ID #{promoted_id}"
+            if promoted_id
+            else "[Memory Promotion] Skipped promotion."
+        )
     except Exception as exc:
         status_msg = f"[Memory Promotion] Failed: {exc}"
 

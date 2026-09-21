@@ -47,9 +47,7 @@ def run_query(agent: Any, query: str, company: str) -> dict[str, Any]:
 
     tool_results = list(result.get("tool_results", []))
     seen = {
-        (r.get("task_id"), r.get("tool_name"))
-        for r in tool_results
-        if r.get("task_id")
+        (r.get("task_id"), r.get("tool_name")) for r in tool_results if r.get("task_id")
     }
     for tid, env in (result.get("sub_task_results") or {}).items():
         if isinstance(env, dict) and (tid, env.get("tool_name")) not in seen:
@@ -58,10 +56,13 @@ def run_query(agent: Any, query: str, company: str) -> dict[str, Any]:
     return {
         "wall_ms": round(wall_ms, 2),
         "tool_calls": len(tool_results),
-        "fan_out_rounds": len([
-            r for r in tool_results
-            if r.get("tool_name") in {"graph_retrieval", "vector_retrieval"}
-        ]),
+        "fan_out_rounds": len(
+            [
+                r
+                for r in tool_results
+                if r.get("tool_name") in {"graph_retrieval", "vector_retrieval"}
+            ]
+        ),
         "terminal": result.get("is_terminal", False),
         "answer_head": (result.get("final_answer") or "")[:80],
     }
@@ -79,15 +80,21 @@ def main() -> int:
         for i in range(RUNS_PER_QUERY):
             r = run_query(agent, query, company)
             results[label].append(r)
-            print(f"  {label} run {i + 1}: wall={r['wall_ms']}ms, tools={r['tool_calls']}, fan_out={r['fan_out_rounds']}")
+            print(
+                f"  {label} run {i + 1}: wall={r['wall_ms']}ms, tools={r['tool_calls']}, fan_out={r['fan_out_rounds']}"
+            )
 
     def summarize(runs: list[dict[str, Any]]) -> dict[str, Any]:
         walls = [r["wall_ms"] for r in runs]
         return {
             "wall_ms_mean": round(statistics.mean(walls), 2),
-            "wall_ms_stdev": round(statistics.stdev(walls), 2) if len(walls) > 1 else 0.0,
+            "wall_ms_stdev": (
+                round(statistics.stdev(walls), 2) if len(walls) > 1 else 0.0
+            ),
             "mean_tool_calls": round(statistics.mean(r["tool_calls"] for r in runs), 2),
-            "mean_fan_out_retrievals": round(statistics.mean(r["fan_out_rounds"] for r in runs), 2),
+            "mean_fan_out_retrievals": round(
+                statistics.mean(r["fan_out_rounds"] for r in runs), 2
+            ),
         }
 
     multi_summary = summarize(results["multi_hop"])
@@ -97,7 +104,9 @@ def main() -> int:
     # after another, wall time ~= sum of their individual tool latencies +
     # orchestration overhead. We approximate by comparing mean walls and
     # reporting the parallel speedup factor.
-    naive_sequential_estimate = multi_summary["wall_ms_mean"] * 2.0  # 2 retrieval rounds serialized
+    naive_sequential_estimate = (
+        multi_summary["wall_ms_mean"] * 2.0
+    )  # 2 retrieval rounds serialized
     report = {
         "multi_hop_query": MULTI_HOP_QUERY,
         "single_hop_query": SINGLE_HOP_QUERY,
@@ -106,7 +115,7 @@ def main() -> int:
         "single_hop": single_summary,
         "naive_sequential_estimate_ms": round(naive_sequential_estimate, 2),
         "note": "naive_sequential_estimate = parallel wall x 2 (two fan-out rounds serialized); "
-                "actual speedup depends on tool latency distribution",
+        "actual speedup depends on tool latency distribution",
     }
 
     out_dir = Path("eval_results")
@@ -115,7 +124,9 @@ def main() -> int:
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
 
-    print(f"\nMulti-hop mean: {multi_summary['wall_ms_mean']}ms | Single-hop mean: {single_summary['wall_ms_mean']}ms")
+    print(
+        f"\nMulti-hop mean: {multi_summary['wall_ms_mean']}ms | Single-hop mean: {single_summary['wall_ms_mean']}ms"
+    )
     print(f"Naive sequential estimate: {report['naive_sequential_estimate_ms']}ms")
     print(f"Saved -> {out_path}")
     return 0

@@ -14,7 +14,9 @@ class QueryRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    query: str = Field(..., description="Natural language financial question or instruction")
+    query: str = Field(
+        ..., description="Natural language financial question or instruction"
+    )
     company_identifier: str | None = Field(
         default=None, description="Company ticker or identifier (e.g., 'AAPL', 'AMZN')"
     )
@@ -61,7 +63,9 @@ class HITLApprovalRequest(BaseModel):
         ..., description="Compliance review action"
     )
     analyst_id: str = Field(default="analyst_system", description="Reviewer identifier")
-    feedback: str = Field(default="", description="Review justification or critique notes")
+    feedback: str = Field(
+        default="", description="Review justification or critique notes"
+    )
     overrides: dict[str, Any] = Field(
         default_factory=dict,
         description="State delta overrides (e.g. corrected line items, altered parameters)",

@@ -64,7 +64,9 @@ class EpisodicRetrievalResult(BaseModel):
     final_score: float
 
 
-def compute_recency_score(created_at: datetime, half_life_days: float = DEFAULT_HALF_LIFE_DAYS) -> float:
+def compute_recency_score(
+    created_at: datetime, half_life_days: float = DEFAULT_HALF_LIFE_DAYS
+) -> float:
     """Calculates exponential memory decay: S_rec = 2^(-delta_t / tau_half)."""
     now = datetime.now(UTC)
     if created_at.tzinfo is None:

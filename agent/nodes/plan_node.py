@@ -60,18 +60,26 @@ def _validate_llm_plan(plan: LLMPlan) -> list[str]:
     for i, task in enumerate(plan.sub_tasks, start=1):
         expected = f"task_{i}"
         if task.task_id != expected:
-            problems.append(f"task_id {task.task_id} out of sequence (expected {expected})")
+            problems.append(
+                f"task_id {task.task_id} out of sequence (expected {expected})"
+            )
         bad_deps = [d for d in task.dependencies if d not in seen]
         if bad_deps:
-            problems.append(f"{task.task_id} depends on unknown/forward tasks: {bad_deps}")
+            problems.append(
+                f"{task.task_id} depends on unknown/forward tasks: {bad_deps}"
+            )
         if not isinstance(task.query_payload, dict) or not task.query_payload:
             problems.append(f"{task.task_id} has empty payload")
         seen.add(task.task_id)
 
-    has_retrieval = any(t.target_tool in {"graph_retrieval", "vector_retrieval"} for t in plan.sub_tasks)
+    has_retrieval = any(
+        t.target_tool in {"graph_retrieval", "vector_retrieval"} for t in plan.sub_tasks
+    )
     has_math = any(t.target_tool == "safe_math" for t in plan.sub_tasks)
     if has_math and not has_retrieval:
-        problems.append("safe_math scheduled without any retrieval task to source values from")
+        problems.append(
+            "safe_math scheduled without any retrieval task to source values from"
+        )
     return problems
 
 
@@ -82,10 +90,7 @@ def _plan_with_llm(state: AgentStateV1) -> tuple[list[dict[str, Any]], str] | No
 
     _, prompt_version, prompt_hash = load_prompt(_PLANNER_PROMPT_NAME)
     company = state.company_identifier or "UNKNOWN"
-    user_prompt = (
-        f"Company identifier: {company}\n"
-        f"User question: {state.input}"
-    )
+    user_prompt = f"Company identifier: {company}\n" f"User question: {state.input}"
 
     result = invoke_llm(
         system_prompt=load_prompt(_PLANNER_PROMPT_NAME)[0],
@@ -121,13 +126,15 @@ def _plan_with_llm(state: AgentStateV1) -> tuple[list[dict[str, Any]], str] | No
 
     pending_calls: list[dict[str, Any]] = []
     for task in plan.sub_tasks:
-        pending_calls.append({
-            "task_id": task.task_id,
-            "target_tool": task.target_tool,
-            "payload": task.query_payload,
-            "dependencies": task.dependencies,
-            "status": "PENDING",
-        })
+        pending_calls.append(
+            {
+                "task_id": task.task_id,
+                "target_tool": task.target_tool,
+                "payload": task.query_payload,
+                "dependencies": task.dependencies,
+                "status": "PENDING",
+            }
+        )
 
     log = (
         f"[Planner {prompt_version} (hash:{prompt_hash}) llm:{result.model}] "
@@ -165,18 +172,33 @@ def plan_node(state: AgentStateV1) -> dict[str, Any]:
 
         pending_calls = []
         for task in decomp.sub_tasks:
-            pending_calls.append({
-                "task_id": task.task_id,
-                "target_tool": task.target_tool,
-                "payload": task.query_payload,
-                "dependencies": task.dependencies,
-                "status": "PENDING",
-            })
+            pending_calls.append(
+                {
+                    "task_id": task.task_id,
+                    "target_tool": task.target_tool,
+                    "payload": task.query_payload,
+                    "dependencies": task.dependencies,
+                    "status": "PENDING",
+                }
+            )
 
         log_entry = (
             f"[Planner {prompt_version}@{GRAPH_VERSION} (hash:{prompt_hash}) rules] "
             f"Generated plan with {len(pending_calls)} tasks. Strategy: {decomp.reasoning_plan}"
         )
+
+    # Record anchoring: when the caller knows the filing the question is
+    # about (the benchmark always does — FinQA ships question+filing as one
+    # record, mirroring the original benchmark's information set), scope
+    # every retrieval task to it up front instead of waiting for the vector
+    # top-1 heuristic.
+    if state.record_id:
+        for call in pending_calls:
+            if call.get("target_tool") in {"graph_retrieval", "vector_retrieval"}:
+                call["payload"] = {
+                    **call.get("payload", {}),
+                    "record_id": state.record_id,
+                }
 
     return {
         "iteration_count": new_iteration,

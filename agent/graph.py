@@ -28,14 +28,18 @@ from agent.state.schema import AgentStateV1
 MAX_ITERATIONS = 3
 
 
-def route_after_aggregate(state: AgentStateV1) -> Literal["compute", "fuse_context", "eval_risk", "synthesize_answer"]:
+def route_after_aggregate(
+    state: AgentStateV1,
+) -> Literal["compute", "fuse_context", "eval_risk", "synthesize_answer"]:
     """Routes from parallel aggregation to risk evaluation or context fusion."""
     if state.tool_results:
         return "fuse_context"
     return "eval_risk"
 
 
-def route_after_risk(state: AgentStateV1) -> Literal["hitl_gate", "compute", "synthesize_answer", "fan_out"]:
+def route_after_risk(
+    state: AgentStateV1,
+) -> Literal["hitl_gate", "compute", "synthesize_answer", "fan_out"]:
     """Conditional router checking if risk triggers require human interrupt."""
     if state.hitl_status == "PENDING":
         return "hitl_gate"
@@ -60,7 +64,9 @@ def route_after_risk(state: AgentStateV1) -> Literal["hitl_gate", "compute", "sy
     return "synthesize_answer"
 
 
-def route_after_compute(state: AgentStateV1) -> Literal["eval_risk", "synthesize_answer"]:
+def route_after_compute(
+    state: AgentStateV1,
+) -> Literal["eval_risk", "synthesize_answer"]:
     """Computed figures are exactly the kind of output governance must review
     (extreme growth, impossible ratios). Route post-math through risk eval —
     but only once, by tracking that eval already ran this iteration."""
@@ -69,7 +75,9 @@ def route_after_compute(state: AgentStateV1) -> Literal["eval_risk", "synthesize
     return "synthesize_answer"
 
 
-def route_after_override(state: AgentStateV1) -> Literal["fan_out", "compute", "synthesize_answer", "write_memory"]:
+def route_after_override(
+    state: AgentStateV1,
+) -> Literal["fan_out", "compute", "synthesize_answer", "write_memory"]:
     """Routes after human intervention is applied.
 
     EDIT: dispatch the reviewer's edited calls FIRST (fan-out), then the
@@ -85,7 +93,8 @@ def route_after_override(state: AgentStateV1) -> Literal["fan_out", "compute", "
     # EDIT: reviewer replaced tool_calls — dispatch them under governance.
     if state.hitl_status == "EDIT":
         pending_exec = [
-            c for c in state.tool_calls
+            c
+            for c in state.tool_calls
             if c.get("target_tool") in {"graph_retrieval", "vector_retrieval"}
             and c.get("status") == "PENDING"
         ]
@@ -114,7 +123,9 @@ def route_after_synthesize(state: AgentStateV1) -> Literal["write_memory", "plan
     return "plan"
 
 
-def build_financial_agent_graph(checkpointer: BaseCheckpointSaver | None = None) -> StateGraph:
+def build_financial_agent_graph(
+    checkpointer: BaseCheckpointSaver | None = None,
+) -> StateGraph:
     """Constructs and wires the parallelized StateGraph with Phase 8 HITL governance."""
     workflow = StateGraph(AgentStateV1)
 

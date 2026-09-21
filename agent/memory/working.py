@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 
-import redis
+import redis  # type: ignore[import-untyped]
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import MemorySaver
 
@@ -21,16 +21,16 @@ class WorkingMemoryManager:
         default_ttl_seconds: int = 86400,  # 24 hours
     ) -> None:
         self.redis_url: str = (
-            redis_url if redis_url is not None else os.getenv("REDIS_URL", "redis://localhost:6379/0")
+            redis_url
+            if redis_url is not None
+            else os.getenv("REDIS_URL", "redis://localhost:6379/0")
         )
         self.default_ttl = default_ttl_seconds
         self._client: redis.Redis | None = None
 
     def _get_client(self) -> redis.Redis:
         if self._client is None:
-            self._client = redis.Redis.from_url(
-                self.redis_url, decode_responses=True
-            )
+            self._client = redis.Redis.from_url(self.redis_url, decode_responses=True)
         return self._client
 
     def save_state(self, session_id: str, state: AgentStateV1) -> None:
@@ -46,7 +46,7 @@ class WorkingMemoryManager:
         if not raw:
             return None
         data = json.loads(str(raw))
-        return AgentStateV1.model_validate(data)
+        return AgentStateV1.model_validate(data)  # type: ignore[no-any-return]
 
     def clear_state(self, session_id: str) -> None:
         client = self._get_client()
@@ -66,7 +66,9 @@ def get_checkpointer(redis_url: str | None = None) -> BaseCheckpointSaver:
     ReJSON modules (redis-stack image), not plain redis-server.
     """
     target_url: str = (
-        redis_url if redis_url is not None else os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        redis_url
+        if redis_url is not None
+        else os.getenv("REDIS_URL", "redis://localhost:6379/0")
     )
     try:
         from langgraph.checkpoint.redis import RedisSaver

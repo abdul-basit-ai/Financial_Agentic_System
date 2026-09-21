@@ -74,7 +74,12 @@ def summarize_metrics(path: str = METRICS_PATH) -> dict[str, Any]:
     for m in metrics:
         agg = by_tool.setdefault(
             m["tool_name"],
-            {"calls": 0, "successes": 0, "total_latency_ms": 0.0, "total_cost_usd": 0.0},
+            {
+                "calls": 0,
+                "successes": 0,
+                "total_latency_ms": 0.0,
+                "total_cost_usd": 0.0,
+            },
         )
         agg["calls"] += 1
         agg["successes"] += int(bool(m["success"]))

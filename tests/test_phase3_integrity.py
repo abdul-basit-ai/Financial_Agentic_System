@@ -145,20 +145,30 @@ def test_neo4j_batch_load_and_integrity() -> None:
     loader.create_schema()
 
     payloads = [
-        build_graph_payload({
-            "record_id": "test_id_1",
-            "split": "train",
-            "document": {"filename": "AMZN/2020/p1.json", "question": "Q1"},
-            "entities": {"company_names": ["AMZN"], "fiscal_years": ["2020"]},
-            "table": {"header": ["Line", "2020"], "rows": [[{"raw": "Sales"}, {"numeric_value": 100.0}]]},
-        }),
-        build_graph_payload({
-            "record_id": "test_id_2",
-            "split": "train",
-            "document": {"filename": "AMZN/2020/p2.json", "question": "Q2"},
-            "entities": {"company_names": ["AMZN"], "fiscal_years": ["2020"]},
-            "table": {"header": ["Line", "2020"], "rows": [[{"raw": "Profit"}, {"numeric_value": 10.0}]]},
-        }),
+        build_graph_payload(
+            {
+                "record_id": "test_id_1",
+                "split": "train",
+                "document": {"filename": "AMZN/2020/p1.json", "question": "Q1"},
+                "entities": {"company_names": ["AMZN"], "fiscal_years": ["2020"]},
+                "table": {
+                    "header": ["Line", "2020"],
+                    "rows": [[{"raw": "Sales"}, {"numeric_value": 100.0}]],
+                },
+            }
+        ),
+        build_graph_payload(
+            {
+                "record_id": "test_id_2",
+                "split": "train",
+                "document": {"filename": "AMZN/2020/p2.json", "question": "Q2"},
+                "entities": {"company_names": ["AMZN"], "fiscal_years": ["2020"]},
+                "table": {
+                    "header": ["Line", "2020"],
+                    "rows": [[{"raw": "Profit"}, {"numeric_value": 10.0}]],
+                },
+            }
+        ),
     ]
 
     stats = loader.load_batch(payloads)
@@ -181,7 +191,9 @@ def test_pgvector_load_and_search() -> None:
     user = os.getenv("POSTGRES_USER", "postgres")
     password = os.getenv("POSTGRES_PASSWORD", "password")
 
-    v_loader = VectorStoreLoader(host=host, port=port, dbname=dbname, user=user, password=password)
+    v_loader = VectorStoreLoader(
+        host=host, port=port, dbname=dbname, user=user, password=password
+    )
     try:
         v_loader.connect()
     except Exception as exc:
@@ -195,8 +207,14 @@ def test_pgvector_load_and_search() -> None:
         "document": {"filename": "AAPL/2020/p1.json"},
         "context": {
             "chunks": [
-                {"source": "pre_text", "text": "Operating revenues climbed 15% due to high iPhone sales."},
-                {"source": "post_text", "text": "Research and development costs remained stable."},
+                {
+                    "source": "pre_text",
+                    "text": "Operating revenues climbed 15% due to high iPhone sales.",
+                },
+                {
+                    "source": "post_text",
+                    "text": "Research and development costs remained stable.",
+                },
             ]
         },
     }

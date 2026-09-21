@@ -129,7 +129,9 @@ def test_trace_operation_decorator() -> None:
     LOCAL_TRACER.clear()
     QUOTA_GUARD.reset_counter()
 
-    @trace_operation(name="test_math_op", run_type="tool", metadata={"metric": "margin"})
+    @trace_operation(
+        name="test_math_op", run_type="tool", metadata={"metric": "margin"}
+    )
     def add_numbers(a: int, b: int) -> int:
         return a + b
 

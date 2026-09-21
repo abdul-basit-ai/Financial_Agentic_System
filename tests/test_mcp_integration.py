@@ -41,7 +41,9 @@ def test_mcp_tools_discovery(bridge: MCPClientBridge) -> None:
         "memory_retrieval",
     }
 
-    assert expected_tools.issubset(tool_names), f"Missing MCP tools: {expected_tools - tool_names}"
+    assert expected_tools.issubset(
+        tool_names
+    ), f"Missing MCP tools: {expected_tools - tool_names}"
 
     # Verify input schema presence
     for t in tools:

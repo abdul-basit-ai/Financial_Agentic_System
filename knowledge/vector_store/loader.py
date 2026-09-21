@@ -29,9 +29,16 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     split TEXT,
     section TEXT NOT NULL,
     chunk_index INT NOT NULL,
+    sentence_start INT,
+    sentence_end INT,
     text_content TEXT NOT NULL,
     embedding vector({EMBEDDING_DIM})
 );
+
+-- sentence_start/sentence_end were added after the initial schema shipped;
+-- ALTER IF NOT EXISTS keeps pre-existing tables loadable.
+ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS sentence_start INT;
+ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS sentence_end INT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS chunk_unique_idx
 ON document_chunks (record_id, section, chunk_index);
@@ -128,8 +135,27 @@ class VectorStoreLoader:
             text = str(ch.get("text", "")).strip()
             if not text:
                 continue
+            # Low-quality windows (chart-to-text '.' padding) are excluded
+            # from the embedding corpus entirely: identical dot strings
+            # embed as a dense garbage cluster that crowds real chunks out
+            # of small top-k budgets.
+            if ch.get("low_quality"):
+                continue
             section = str(ch.get("source", "context"))
-            rows.append((record_id, filename, split, section, idx, text))
+            sentence_start = ch.get("start_sentence")
+            sentence_end = ch.get("end_sentence")
+            rows.append(
+                (
+                    record_id,
+                    filename,
+                    split,
+                    section,
+                    idx,
+                    sentence_start if isinstance(sentence_start, int) else None,
+                    sentence_end if isinstance(sentence_end, int) else None,
+                    text,
+                )
+            )
         return rows
 
     def insert_batch(self, rows_batch: list[tuple[Any, ...]]) -> int:
@@ -137,20 +163,25 @@ class VectorStoreLoader:
             return 0
         assert self._conn is not None
 
-        texts = [r[5] for r in rows_batch]
-        embeddings = self.model.encode(texts, show_progress_bar=False, normalize_embeddings=True)
+        texts = [r[7] for r in rows_batch]
+        embeddings = self.model.encode(
+            texts, show_progress_bar=False, normalize_embeddings=True
+        )
 
         payload = [
-            (r[0], r[1], r[2], r[3], r[4], r[5], embeddings[i].tolist())
+            (r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], embeddings[i].tolist())
             for i, r in enumerate(rows_batch)
         ]
 
         query = """
         INSERT INTO document_chunks (
-            record_id, filename, split, section, chunk_index, text_content, embedding
+            record_id, filename, split, section, chunk_index,
+            sentence_start, sentence_end, text_content, embedding
         ) VALUES %s
         ON CONFLICT (record_id, section, chunk_index)
         DO UPDATE SET
+            sentence_start = EXCLUDED.sentence_start,
+            sentence_end = EXCLUDED.sentence_end,
             text_content = EXCLUDED.text_content,
             embedding = EXCLUDED.embedding;
         """
@@ -192,15 +223,21 @@ class VectorStoreLoader:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Load FinQA narrative chunks into pgvector")
+    parser = argparse.ArgumentParser(
+        description="Load FinQA narrative chunks into pgvector"
+    )
     parser.add_argument("--normalized-dir", default="data/processed/normalized")
     parser.add_argument("--splits", nargs="+", default=SPLITS, choices=SPLITS)
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--host", default=os.getenv("POSTGRES_HOST", "localhost"))
-    parser.add_argument("--port", type=int, default=int(os.getenv("POSTGRES_PORT", "5432")))
+    parser.add_argument(
+        "--port", type=int, default=int(os.getenv("POSTGRES_PORT", "5432"))
+    )
     parser.add_argument("--dbname", default=os.getenv("POSTGRES_DB", "financial_agent"))
     parser.add_argument("--user", default=os.getenv("POSTGRES_USER", "postgres"))
-    parser.add_argument("--password", default=os.getenv("POSTGRES_PASSWORD", "password"))
+    parser.add_argument(
+        "--password", default=os.getenv("POSTGRES_PASSWORD", "password")
+    )
     return parser.parse_args()
 
 

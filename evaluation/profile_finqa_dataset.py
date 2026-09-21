@@ -27,7 +27,19 @@ PROGRAM_OPS = {
     "table_sum",
     "table_average",
 }
-MISSING_TOKENS = {"", "-", "--", "---", "na", "n/a", "nm", "none", "null", "nan", "n.m."}
+MISSING_TOKENS = {
+    "",
+    "-",
+    "--",
+    "---",
+    "na",
+    "n/a",
+    "nm",
+    "none",
+    "null",
+    "nan",
+    "n.m.",
+}
 YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 WORD_RE = re.compile(r"[A-Za-z0-9%\.]+")
 
@@ -140,7 +152,16 @@ def classify_question(question: str, program_ops: list[str], program: str) -> li
     if "%" in q or "percent" in q or "percentage" in q:
         labels.append("percentage")
 
-    diff_words = ["difference", "change", "increase", "decrease", "more", "less", "higher", "lower"]
+    diff_words = [
+        "difference",
+        "change",
+        "increase",
+        "decrease",
+        "more",
+        "less",
+        "higher",
+        "lower",
+    ]
     if any(w in q for w in diff_words) or "subtract" in program_ops:
         labels.append("difference")
 
@@ -203,14 +224,18 @@ def profile_dataset(dataset_dir: str) -> dict:
             keys = set(rec.keys())
             top_keys_union.update(keys)
             top_keys_intersection = (
-                keys if top_keys_intersection is None else (top_keys_intersection & keys)
+                keys
+                if top_keys_intersection is None
+                else (top_keys_intersection & keys)
             )
 
             qa = rec.get("qa", {}) if isinstance(rec, dict) else {}
             qa_keys = set(qa.keys()) if isinstance(qa, dict) else set()
             qa_keys_union.update(qa_keys)
             qa_keys_intersection = (
-                qa_keys if qa_keys_intersection is None else (qa_keys_intersection & qa_keys)
+                qa_keys
+                if qa_keys_intersection is None
+                else (qa_keys_intersection & qa_keys)
             )
 
             question = qa.get("question", "") if isinstance(qa, dict) else ""
@@ -222,7 +247,9 @@ def profile_dataset(dataset_dir: str) -> dict:
             pre_text = rec.get("pre_text", [])
             post_text = rec.get("post_text", [])
             pre_sent_counts.append(len(pre_text) if isinstance(pre_text, list) else 0)
-            post_sent_counts.append(len(post_text) if isinstance(post_text, list) else 0)
+            post_sent_counts.append(
+                len(post_text) if isinstance(post_text, list) else 0
+            )
 
             table = rec.get("table", [])
             table_rows.append(len(table) if isinstance(table, list) else 0)
@@ -259,7 +286,11 @@ def profile_dataset(dataset_dir: str) -> dict:
                     if not isinstance(row, list):
                         continue
                     # Heuristic: blank first cell with content later often indicates merged row labels in source.
-                    if row and str(row[0]).strip() == "" and any(str(c).strip() for c in row[1:]):
+                    if (
+                        row
+                        and str(row[0]).strip() == ""
+                        and any(str(c).strip() for c in row[1:])
+                    ):
                         possible_merged_rows += 1
 
                     for c in row:
@@ -301,10 +332,12 @@ def profile_dataset(dataset_dir: str) -> dict:
             "records_with_program": with_program,
             "question_tokens_avg": round(mean(q_lens), 2) if q_lens else 0.0,
             "table_rows_avg": round(mean(table_rows), 2) if table_rows else 0.0,
-            "pre_text_sentences_avg": round(mean(pre_sent_counts), 2) if pre_sent_counts else 0.0,
-            "post_text_sentences_avg": round(mean(post_sent_counts), 2)
-            if post_sent_counts
-            else 0.0,
+            "pre_text_sentences_avg": (
+                round(mean(pre_sent_counts), 2) if pre_sent_counts else 0.0
+            ),
+            "post_text_sentences_avg": (
+                round(mean(post_sent_counts), 2) if post_sent_counts else 0.0
+            ),
             "top_program_ops": split_ops.most_common(10),
             "question_types": dict(split_qtypes),
             "financial_metric_categories": dict(split_categories),
@@ -339,9 +372,15 @@ def render_markdown(summary: dict) -> str:
     lines.append("## Checklist Coverage")
     lines.append("")
     lines.append("- [x] Explore FinQA dataset structure")
-    lines.append("- [x] Understand JSON schema (tables, text, questions, programs, answers)")
-    lines.append("- [x] Identify question types (percentage, difference, ratio, multi-hop)")
-    lines.append("- [x] Identify edge cases (missing values, merged cells, multi-year tables)")
+    lines.append(
+        "- [x] Understand JSON schema (tables, text, questions, programs, answers)"
+    )
+    lines.append(
+        "- [x] Identify question types (percentage, difference, ratio, multi-hop)"
+    )
+    lines.append(
+        "- [x] Identify edge cases (missing values, merged cells, multi-year tables)"
+    )
     lines.append("- [x] Document financial metric categories found in dataset")
     lines.append("")
 
@@ -374,7 +413,9 @@ def render_markdown(summary: dict) -> str:
         for op, c in s["top_program_ops"][:8]:
             lines.append(f"  - {op}: {c}")
         lines.append("- Question types:")
-        for qt, c in sorted(s["question_types"].items(), key=lambda kv: kv[1], reverse=True):
+        for qt, c in sorted(
+            s["question_types"].items(), key=lambda kv: kv[1], reverse=True
+        ):
             lines.append(f"  - {qt}: {c}")
         lines.append("- Financial metric categories:")
         for cat, c in sorted(
@@ -391,7 +432,9 @@ def render_markdown(summary: dict) -> str:
 
     lines.append("## Notes")
     lines.append("")
-    lines.append("- `private_test` has no gold programs by design (blind evaluation split).")
+    lines.append(
+        "- `private_test` has no gold programs by design (blind evaluation split)."
+    )
     lines.append(
         "- `possible_merged_cell_rows` is a heuristic: rows with blank first cell and populated trailing cells."
     )

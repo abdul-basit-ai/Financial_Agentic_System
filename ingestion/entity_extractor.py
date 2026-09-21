@@ -12,18 +12,41 @@ UNIT_RE = re.compile(
 )
 
 COMPANY_SUFFIXES = {
-    "inc", "inc.", "corp", "corp.", "corporation", "co", "co.",
-    "company", "ltd", "ltd.", "plc", "llc", "group", "holdings"
+    "inc",
+    "inc.",
+    "corp",
+    "corp.",
+    "corporation",
+    "co",
+    "co.",
+    "company",
+    "ltd",
+    "ltd.",
+    "plc",
+    "llc",
+    "group",
+    "holdings",
 }
 
 BLACKLIST_IDENTIFIERS = {
-    "PAGE", "DOC", "DOCUMENT", "TABLE", "TEST", "TRAIN", "DEV",
-    "FINQA", "FILE", "ITEM", "SECTION", "ANNUAL", "REPORT"
+    "PAGE",
+    "DOC",
+    "DOCUMENT",
+    "TABLE",
+    "TEST",
+    "TRAIN",
+    "DEV",
+    "FINQA",
+    "FILE",
+    "ITEM",
+    "SECTION",
+    "ANNUAL",
+    "REPORT",
 }
 
 
 def _text_join(parts: list[Any]) -> str:
-    out = []
+    out: list[str] = []
     for p in parts:
         if isinstance(p, list):
             out.extend(str(x) for x in p)
@@ -43,13 +66,18 @@ def _extract_company_candidates(text: str) -> set[str]:
     return entities
 
 
-def _extract_company_identifier(filename: str) -> str:
+def extract_company_identifier(filename: str) -> str:
     """Extracts the company identifier from a FinQA filename path prefix.
 
     FinQA filenames look like 'AMZN/2019/page_33.pdf' or 'V/2008/page_17.pdf'
     — the first path segment is the company code. Single-letter codes are
     legitimate (V = Visa, C = Citigroup, T = AT&T), so no minimum length is
     enforced; only the blacklist filters junk.
+
+    This is the FILER identity (ground truth in FinQA) and takes precedence
+    over in-text "X Corp" candidates — a Visa filing's narrative names
+    Mastercard and AmEx too, and company_names is alphabetically sorted, so
+    consumers must not rely on company_names[0].
     """
     if not filename:
         return ""
@@ -58,6 +86,10 @@ def _extract_company_identifier(filename: str) -> str:
     if not clean_id or clean_id in BLACKLIST_IDENTIFIERS:
         return ""
     return clean_id
+
+
+# Backward-compatible alias (existing tests import the private name).
+_extract_company_identifier = extract_company_identifier
 
 
 def extract_entities(

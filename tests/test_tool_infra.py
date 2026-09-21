@@ -44,11 +44,15 @@ def test_load_tool_schema_roundtrip(tmp_path) -> None:
 
 def test_export_schemas_is_idempotent(tmp_path) -> None:
     export_schemas(out_dir=str(tmp_path))
-    first = {p: os.path.getmtime(os.path.join(str(tmp_path), p))
-             for p in os.listdir(str(tmp_path))}
+    first = {
+        p: os.path.getmtime(os.path.join(str(tmp_path), p))
+        for p in os.listdir(str(tmp_path))
+    }
     export_schemas(out_dir=str(tmp_path))
-    second = {p: os.path.getmtime(os.path.join(str(tmp_path), p))
-              for p in os.listdir(str(tmp_path))}
+    second = {
+        p: os.path.getmtime(os.path.join(str(tmp_path), p))
+        for p in os.listdir(str(tmp_path))
+    }
     assert set(first) == set(second)
 
 

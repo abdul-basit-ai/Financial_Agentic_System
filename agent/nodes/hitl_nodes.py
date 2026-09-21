@@ -50,7 +50,10 @@ def eval_financial_risk_node(state: AgentStateV1) -> dict[str, Any]:
         node_name="eval_financial_risk",
         actor_id="risk_engine",
         action_type="EVALUATE_RISK",
-        state_payload={"risk_score": assessment.composite_risk_score, "requires_hitl": assessment.requires_hitl},
+        state_payload={
+            "risk_score": assessment.composite_risk_score,
+            "requires_hitl": assessment.requires_hitl,
+        },
     )
 
     log_msg = (
@@ -121,7 +124,9 @@ def hitl_gate_node(state: AgentStateV1) -> dict[str, Any]:
         state_payload={"action": action, "feedback": feedback, "overrides": overrides},
     )
 
-    log_entry = f"[HITL Resolution] Action: {action} by {analyst_id}. Feedback: {feedback}"
+    log_entry = (
+        f"[HITL Resolution] Action: {action} by {analyst_id}. Feedback: {feedback}"
+    )
 
     updates: dict[str, Any] = {"hitl_status": action, "scratchpad": [log_entry]}
 
@@ -140,7 +145,9 @@ def hitl_gate_node(state: AgentStateV1) -> dict[str, Any]:
 
 def apply_override_node(state: AgentStateV1) -> dict[str, Any]:
     """Injects approved human edits cleanly into tool_calls and sub_task_results."""
-    scratchpad_logs = ["[HITL Override] Verified and aligned state with human directions."]
+    scratchpad_logs = [
+        "[HITL Override] Verified and aligned state with human directions."
+    ]
 
     # If rejected, mark terminal or redirect to plan
     if state.hitl_status in {"REJECTED", "REJECT"}:

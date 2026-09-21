@@ -51,7 +51,9 @@ def reciprocal_rank_fusion(
     for rank, g in enumerate(graph_records, start=1):
         item_id = f"graph::{g.report_id}::{g.row_label}::{g.year}"
         amount_str = f"{g.amount:,.2f}" if g.amount is not None else "N/A"
-        base_str = f"{g.normalized_amount:,.2f}" if g.normalized_amount is not None else "N/A"
+        base_str = (
+            f"{g.normalized_amount:,.2f}" if g.normalized_amount is not None else "N/A"
+        )
 
         content = (
             f"[Table Line] Company: {g.company} | Year: {g.year or 'N/A'} | "

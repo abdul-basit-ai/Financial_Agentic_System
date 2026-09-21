@@ -73,7 +73,9 @@ def create_app() -> FastAPI:
 
     # 3. Global Exception Handler
     @app.exception_handler(Exception)
-    async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    async def global_exception_handler(
+        request: Request, exc: Exception
+    ) -> JSONResponse:
         return JSONResponse(
             status_code=500,
             content={

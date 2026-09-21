@@ -54,6 +54,131 @@ def test_fan_out_router_generates_sends() -> None:
     assert {s.arg["task_id"] for s in sends} == {"task_1", "task_2"}
 
 
+def test_fan_out_router_injects_anchor_record_id() -> None:
+    """Record anchoring: a graph task depending on a completed vector task
+    must receive the vector top chunk's record_id in its dispatch payload,
+    so retrieval reads the filing the question is actually about."""
+    state = AgentStateV1(
+        input="What was the change in ETR long-term debt maturities from 2016 to 2017?",
+        company_identifier="ETR",
+        tool_calls=[
+            {
+                "task_id": "task_1",
+                "target_tool": "vector_retrieval",
+                "payload": {
+                    "query_text": "long-term debt maturities",
+                    "company_identifier": "ETR",
+                },
+                "dependencies": [],
+                "status": "COMPLETED",
+            },
+            {
+                "task_id": "task_2",
+                "target_tool": "graph_retrieval",
+                "payload": {"company_identifier": "ETR", "year": 2016},
+                "dependencies": ["task_1"],
+                "status": "PENDING",
+            },
+        ],
+        sub_task_results={
+            "task_1": {
+                "task_id": "task_1",
+                "tool_name": "vector_retrieval",
+                "success": True,
+                "data": {
+                    "chunks": [
+                        {
+                            "record_id": "ETR/2017/page_422.pdf-2",
+                            "text_content": "maturities...",
+                            "similarity_score": 0.62,
+                        }
+                    ],
+                    "total_found": 1,
+                },
+                "error": None,
+            }
+        },
+    )
+
+    sends = fan_out_router(state)
+    assert isinstance(sends, list)
+    assert len(sends) == 1
+    assert sends[0].arg["payload"]["record_id"] == "ETR/2017/page_422.pdf-2"
+
+
+def test_fan_out_router_no_anchor_no_injection() -> None:
+    """Without a usable anchor (vector task empty), the graph payload must be
+    dispatched unchanged — the retrieval ladder inside the tool remains the
+    safety net."""
+    state = AgentStateV1(
+        input="Any question",
+        company_identifier="ETR",
+        tool_calls=[
+            {
+                "task_id": "task_1",
+                "target_tool": "vector_retrieval",
+                "payload": {"query_text": "x"},
+                "dependencies": [],
+                "status": "COMPLETED",
+            },
+            {
+                "task_id": "task_2",
+                "target_tool": "graph_retrieval",
+                "payload": {"company_identifier": "ETR", "year": 2016},
+                "dependencies": ["task_1"],
+                "status": "PENDING",
+            },
+        ],
+        sub_task_results={
+            "task_1": {
+                "task_id": "task_1",
+                "tool_name": "vector_retrieval",
+                "success": True,
+                "data": {"chunks": [], "total_found": 0},
+                "error": None,
+            }
+        },
+    )
+
+    sends = fan_out_router(state)
+    assert isinstance(sends, list)
+    assert "record_id" not in sends[0].arg["payload"]
+
+
+def test_anchor_extraction_from_graph_dependency_fails_closed() -> None:
+    """A graph dependency that is NOT a vector task must not be mined for an
+    anchor (chunks only exist on vector results)."""
+    state = AgentStateV1(
+        input="q",
+        company_identifier="ETR",
+        tool_calls=[
+            {
+                "task_id": "task_2",
+                "target_tool": "graph_retrieval",
+                "payload": {"company_identifier": "ETR"},
+                "dependencies": ["task_1"],
+                "status": "PENDING",
+            },
+        ],
+        sub_task_results={
+            "task_1": {
+                "task_id": "task_1",
+                "tool_name": "graph_retrieval",
+                "success": True,
+                "data": {
+                    "records": [{"row_label": "revenue", "amount": 5.0}],
+                    "total_found": 1,
+                },
+                "error": None,
+            }
+        },
+    )
+
+    sends = fan_out_router(state)
+    assert isinstance(sends, list)
+    assert "record_id" not in sends[0].arg["payload"]
+
+
 def test_sub_task_worker_execution() -> None:
     payload = {
         "task_id": "test_math_task",
@@ -169,11 +294,13 @@ def test_worker_fails_task_on_concurrency_timeout(monkeypatch) -> None:
     for h in holders:
         h.__enter__()
     try:
-        out = sub_task_worker({
-            "task_id": "task_x",
-            "target_tool": "safe_math",
-            "payload": {"expression": "add(1, 2)"},
-        })
+        out = sub_task_worker(
+            {
+                "task_id": "task_x",
+                "target_tool": "safe_math",
+                "payload": {"expression": "add(1, 2)"},
+            }
+        )
         env = out["sub_task_results"]["task_x"]
         assert env["success"] is False
         assert "Concurrency limit timeout" in env["error"]

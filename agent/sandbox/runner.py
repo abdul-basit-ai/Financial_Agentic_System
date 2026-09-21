@@ -71,12 +71,17 @@ class SubprocessSandboxRunner:
         scrubbed = {}
         for k, v in os.environ.items():
             k_upper = k.upper()
-            if (
-                k_upper in SAFE_ENV_KEYS
-                and not any(
-                    s in k_upper
-                    for s in ["KEY", "TOKEN", "SECRET", "PASSWORD", "NEO4J", "POSTGRES", "REDIS"]
-                )
+            if k_upper in SAFE_ENV_KEYS and not any(
+                s in k_upper
+                for s in [
+                    "KEY",
+                    "TOKEN",
+                    "SECRET",
+                    "PASSWORD",
+                    "NEO4J",
+                    "POSTGRES",
+                    "REDIS",
+                ]
             ):
                 scrubbed[k] = v
 
@@ -146,12 +151,16 @@ class SubprocessSandboxRunner:
             # Detect Memory Limit Kill on POSIX
             if exit_code in (-9, 137) and not timed_out:
                 oom_killed = True
-                stderr += "\n[Sandbox Error] Process killed: memory limit exceeded (OOM)."
+                stderr += (
+                    "\n[Sandbox Error] Process killed: memory limit exceeded (OOM)."
+                )
 
             # Harvest Generated Artifacts
             artifacts: list[ArtifactManifest] = []
             for file_path in artifacts_dir.glob("*"):
-                if file_path.is_file() and file_path.stat().st_size <= 5 * 1024 * 1024:  # 5MB cap
+                if (
+                    file_path.is_file() and file_path.stat().st_size <= 5 * 1024 * 1024
+                ):  # 5MB cap
                     data_bytes = file_path.read_bytes()
                     artifacts.append(
                         ArtifactManifest(

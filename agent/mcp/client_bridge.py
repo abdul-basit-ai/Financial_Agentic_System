@@ -52,7 +52,9 @@ class MCPClientBridge:
         """Synchronously discovers tools."""
         return asyncio.run(self.list_tools_async())
 
-    async def call_tool_async(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def call_tool_async(
+        self, name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
         """Dispatches tool invocation through the MCP server interface.
 
         Handles both MCP 1.x return shapes: the low-level tuple

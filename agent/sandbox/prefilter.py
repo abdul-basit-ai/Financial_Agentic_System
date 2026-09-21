@@ -103,7 +103,9 @@ class SecurityASTVisitor(ast.NodeVisitor):
                     f"Import from unauthorized module '{node.module}' is strictly forbidden."
                 )
         else:
-            raise SandboxSecurityError("Relative imports are forbidden in the sandbox environment.")
+            raise SandboxSecurityError(
+                "Relative imports are forbidden in the sandbox environment."
+            )
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:

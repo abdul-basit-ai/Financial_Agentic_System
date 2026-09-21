@@ -43,8 +43,12 @@ def compute_mcnemar_test(
     if len(baseline_flags) != len(candidate_flags):
         raise ValueError("Baseline and candidate outcomes must have identical lengths.")
 
-    n10 = sum(1 for b, c in zip(baseline_flags, candidate_flags) if b and not c)  # Regressions
-    n01 = sum(1 for b, c in zip(baseline_flags, candidate_flags) if not b and c)  # Improvements
+    n10 = sum(
+        1 for b, c in zip(baseline_flags, candidate_flags) if b and not c
+    )  # Regressions
+    n01 = sum(
+        1 for b, c in zip(baseline_flags, candidate_flags) if not b and c
+    )  # Improvements
 
     denom = n01 + n10
     if denom == 0:
@@ -102,7 +106,9 @@ def evaluate_gate(
 
     common_ids = sorted(set(base_map.keys()) & set(cand_map.keys()))
     if not common_ids:
-        raise ValueError("Zero overlapping records found between baseline and candidate benchmarks.")
+        raise ValueError(
+            "Zero overlapping records found between baseline and candidate benchmarks."
+        )
 
     base_flags = [base_map[rid] for rid in common_ids]
     cand_flags = [cand_map[rid] for rid in common_ids]
@@ -123,15 +129,21 @@ def evaluate_gate(
     # Rule 1: No negative accuracy regression
     if delta < 0.0:
         passed = False
-        reasons.append(f"Net accuracy dropped by {abs(delta):.2%} ({base_acc:.2%} -> {cand_acc:.2%}).")
+        reasons.append(
+            f"Net accuracy dropped by {abs(delta):.2%} ({base_acc:.2%} -> {cand_acc:.2%})."
+        )
 
     # Rule 2: Regressed sample rate exceeds tolerance
     if reg_rate > max_regression_rate:
         passed = False
-        reasons.append(f"Sample regression rate ({reg_rate:.2%}) breached max allowable threshold ({max_regression_rate:.2%}).")
+        reasons.append(
+            f"Sample regression rate ({reg_rate:.2%}) breached max allowable threshold ({max_regression_rate:.2%})."
+        )
 
     if passed:
-        reasons.append("All CI/CD statistical criteria passed. Zero unacceptable regressions detected.")
+        reasons.append(
+            "All CI/CD statistical criteria passed. Zero unacceptable regressions detected."
+        )
 
     return GateDecision(
         passed=passed,
@@ -147,8 +159,12 @@ def evaluate_gate(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="CI/CD Statistical Regression Gate")
-    parser.add_argument("--baseline", required=True, help="Path to baseline benchmark JSON")
-    parser.add_argument("--candidate", required=True, help="Path to candidate benchmark JSON")
+    parser.add_argument(
+        "--baseline", required=True, help="Path to baseline benchmark JSON"
+    )
+    parser.add_argument(
+        "--candidate", required=True, help="Path to candidate benchmark JSON"
+    )
     parser.add_argument("--max-regression-rate", type=float, default=0.02)
     args = parser.parse_args()
 

@@ -80,7 +80,13 @@ def test_commutative_ast_isomorphism() -> None:
 
 def test_compute_ir_metrics() -> None:
     gold = ["row_revenue", "text_driver_1"]
-    retrieved = ["row_assets", "row_revenue", "row_equity", "text_driver_1", "text_extra"]
+    retrieved = [
+        "row_assets",
+        "row_revenue",
+        "row_equity",
+        "text_driver_1",
+        "text_extra",
+    ]
 
     metrics = compute_ir_metrics(retrieved, gold, k=5)
 
@@ -99,7 +105,9 @@ def test_classify_failure_taxonomy() -> None:
     # 1. Correct
     state_ok = {
         "final_answer": "150.0",
-        "tool_results": [{"tool_name": "safe_math", "data": {"result": 150.0}, "success": True}],
+        "tool_results": [
+            {"tool_name": "safe_math", "data": {"result": 150.0}, "success": True}
+        ],
     }
     attr_ok = classify_failure(state_ok, gold_answer=150.0)
     assert attr_ok.category == FailureCategory.CORRECT
@@ -118,7 +126,11 @@ def test_classify_failure_taxonomy() -> None:
     state_plan = {
         "final_answer": "20.0",
         "tool_results": [
-            {"tool_name": "safe_math", "data": {"expression": "add(10, 10)"}, "success": True}
+            {
+                "tool_name": "safe_math",
+                "data": {"expression": "add(10, 10)"},
+                "success": True,
+            }
         ],
     }
     attr_plan = classify_failure(

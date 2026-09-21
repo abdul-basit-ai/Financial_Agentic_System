@@ -25,10 +25,16 @@ MAD_Z_SCORE_THRESHOLD = 10.0  # Tight enough for true outliers (z>20 for a 3.5x
 
 
 class RiskTriggerReason(BaseModel):
-    category: str = Field(..., description="Category: ANOMALY, MATERIALITY, INTEGRITY, CONFIDENCE")
-    severity: str = Field(..., description="Severity level: LOW, MEDIUM, HIGH, CRITICAL")
+    category: str = Field(
+        ..., description="Category: ANOMALY, MATERIALITY, INTEGRITY, CONFIDENCE"
+    )
+    severity: str = Field(
+        ..., description="Severity level: LOW, MEDIUM, HIGH, CRITICAL"
+    )
     message: str = Field(..., description="Detailed explanation of the risk trigger")
-    metric_value: float | None = Field(default=None, description="Observed numeric value")
+    metric_value: float | None = Field(
+        default=None, description="Observed numeric value"
+    )
 
 
 class RiskAssessmentResult(BaseModel):
@@ -138,8 +144,18 @@ class FinancialRiskEngine:
                             seen_observations.add(key)
                             benford_pool.append(float(candidate))
 
-                # Check Extreme Margins (> 100% or < -100%)
-                if any(m in row_label for m in ["margin", "rate", "percentage"]) and amt is not None:
+                # Check Extreme Margins (> 100% or < -100%). Fires only with
+                # percent CONTEXT: '%' in the row label or column header. A
+                # transposed table can name a row "gross margin" while storing
+                # raw dollar figures (688 = $688, not 688%) — flagging that
+                # paused nearly every benchmark query at the HITL gate.
+                column_header = str(r.get("column_header", "")).lower()
+                has_percent_context = "%" in row_label or "%" in column_header
+                if (
+                    any(m in row_label for m in ["margin", "rate", "percentage"])
+                    and has_percent_context
+                    and amt is not None
+                ):
                     if abs(float(amt)) > 100.0:
                         reasons.append(
                             RiskTriggerReason(
@@ -191,7 +207,10 @@ class FinancialRiskEngine:
             expr = str(data.get("expression", ""))
             if math_result is not None:
                 extracted_numbers.append(float(math_result))
-                if any(w in expr.lower() for w in ["growth", "change", "margin"]) and abs(float(math_result)) > 500.0:
+                if (
+                    any(w in expr.lower() for w in ["growth", "change", "margin"])
+                    and abs(float(math_result)) > 500.0
+                ):
                     reasons.append(
                         RiskTriggerReason(
                             category="ANOMALY",
@@ -246,6 +265,20 @@ class FinancialRiskEngine:
         # informational UNLESS they accumulate heavily. A couple of mediocre
         # vector matches (2x MEDIUM = 0.7) hitting the composite ceiling would
         # escalate nearly every generic query -> HITL alarm fatigue.
+        #
+        # Reasons dedupe per (category, message): a 150-row retrieval sweep
+        # fires the same materiality trigger on dozens of rows, and N copies
+        # of one observation saturate the composite (0.7 each) into a spurious
+        # HITL pause. One observation, one reason.
+        deduped: list[RiskTriggerReason] = []
+        seen_reasons: set[str] = set()
+        for r in reasons:
+            reason_key = f"{r.category}:{r.message}"
+            if reason_key not in seen_reasons:
+                seen_reasons.add(reason_key)
+                deduped.append(r)
+        reasons = deduped
+
         severity_weights = {"LOW": 0.1, "MEDIUM": 0.35, "HIGH": 0.7, "CRITICAL": 1.0}
         total_risk = 0.0
         for r in reasons:

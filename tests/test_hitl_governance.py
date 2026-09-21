@@ -70,6 +70,7 @@ def test_financial_risk_engine_triggers_on_anomalies() -> None:
                     "records": [
                         {
                             "row_label": "Operating Margin",
+                            "column_header": "operating margin ( % )",
                             "amount": 145.0,  # Impossible margin > 100%
                             "normalized_amount": None,
                         },
@@ -183,7 +184,8 @@ def test_hitl_interrupt_pauses_and_resume_approves() -> None:
 
         # Human approves -> graph resumes to completion
         final = agent.invoke(
-            Command(resume={"action": "APPROVE", "analyst_id": "analyst_42"}), config=config
+            Command(resume={"action": "APPROVE", "analyst_id": "analyst_42"}),
+            config=config,
         )
         assert final["is_terminal"] is True
         assert final["hitl_status"] in {"APPROVE", "APPROVED"}

@@ -41,12 +41,18 @@ def clean_table(pg_ledger):
 def test_persistent_writes_are_durable(clean_table) -> None:
     ledger = clean_table
     ledger.record_transition(
-        trace_id="t1", node_name="plan", actor_id="system",
-        action_type="CREATE_PLAN", state_payload={"step": 1},
+        trace_id="t1",
+        node_name="plan",
+        actor_id="system",
+        action_type="CREATE_PLAN",
+        state_payload={"step": 1},
     )
     ledger.record_transition(
-        trace_id="t1", node_name="eval_risk", actor_id="risk_engine",
-        action_type="EVALUATE_RISK", state_payload={"risk": 0.2},
+        trace_id="t1",
+        node_name="eval_risk",
+        actor_id="risk_engine",
+        action_type="EVALUATE_RISK",
+        state_payload={"risk": 0.2},
     )
 
     # Fresh instance (simulated restart) reads the same durable chain
@@ -62,16 +68,22 @@ def test_persistent_writes_are_durable(clean_table) -> None:
 def test_chain_continues_across_restart_without_fork(clean_table) -> None:
     first = clean_table
     e1 = first.record_transition(
-        trace_id="t1", node_name="a", actor_id="s",
-        action_type="ACT_1", state_payload={"n": 1},
+        trace_id="t1",
+        node_name="a",
+        actor_id="s",
+        action_type="ACT_1",
+        state_payload={"n": 1},
     )
 
     # Simulate restart: brand-new ledger instance with empty memory
     second = PersistentMerkleAuditLedger()
     second.init_schema()
     e2 = second.record_transition(
-        trace_id="t1", node_name="b", actor_id="s",
-        action_type="ACT_2", state_payload={"n": 2},
+        trace_id="t1",
+        node_name="b",
+        actor_id="s",
+        action_type="ACT_2",
+        state_payload={"n": 2},
     )
 
     # The restart entry must chain onto the DB tail, not genesis
@@ -89,8 +101,11 @@ def test_db_tampering_is_detected(clean_table) -> None:
     ledger = clean_table
     for i in range(3):
         ledger.record_transition(
-            trace_id="t1", node_name=f"n{i}", actor_id="s",
-            action_type=f"ACT_{i}", state_payload={"i": i},
+            trace_id="t1",
+            node_name=f"n{i}",
+            actor_id="s",
+            action_type=f"ACT_{i}",
+            state_payload={"i": i},
         )
 
     ok, _ = ledger.verify_integrity(from_db=True)
@@ -115,11 +130,16 @@ def test_db_tampering_is_detected(clean_table) -> None:
             " actor_id, action_type, state_hash, prev_hash, entry_hash, metadata)"
             " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
-                ledger.entries[1].entry_index, ledger.entries[1].timestamp_utc,
-                ledger.entries[1].trace_id, ledger.entries[1].node_name,
-                ledger.entries[1].actor_id, ledger.entries[1].action_type,
-                ledger.entries[1].state_hash, ledger.entries[1].prev_hash,
-                ledger.entries[1].entry_hash, "{}",
+                ledger.entries[1].entry_index,
+                ledger.entries[1].timestamp_utc,
+                ledger.entries[1].trace_id,
+                ledger.entries[1].node_name,
+                ledger.entries[1].actor_id,
+                ledger.entries[1].action_type,
+                ledger.entries[1].state_hash,
+                ledger.entries[1].prev_hash,
+                ledger.entries[1].entry_hash,
+                "{}",
             ),
         )
     ledger._get_connection().commit()
@@ -128,8 +148,11 @@ def test_db_tampering_is_detected(clean_table) -> None:
 def test_degraded_mode_is_memory_only_and_loud(clean_table, capsys) -> None:
     # Point at an unreachable server -> init_schema must fail OPEN with a warning
     degraded = PersistentMerkleAuditLedger(
-        host="localhost", port=9999, dbname="financial_agent",
-        user="postgres", password="password",
+        host="localhost",
+        port=9999,
+        dbname="financial_agent",
+        user="postgres",
+        password="password",
     )
     ok = degraded.init_schema()
     assert ok is False
@@ -138,8 +161,11 @@ def test_degraded_mode_is_memory_only_and_loud(clean_table, capsys) -> None:
 
     # Recording still works in-memory so agent execution is not blocked
     entry = degraded.record_transition(
-        trace_id="t1", node_name="a", actor_id="s",
-        action_type="ACT", state_payload={"x": 1},
+        trace_id="t1",
+        node_name="a",
+        actor_id="s",
+        action_type="ACT",
+        state_payload={"x": 1},
     )
     assert entry.entry_index == 0
     ok_mem, _ = degraded.verify_integrity()

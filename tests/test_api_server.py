@@ -65,7 +65,9 @@ def test_sse_query_stream(client: TestClient) -> None:
         # Verify stream structure
         assert "lifecycle" in events_received
         assert "node_update" in events_received
-        assert any(e in {"final_answer", "complete", "interrupt"} for e in events_received)
+        assert any(
+            e in {"final_answer", "complete", "interrupt"} for e in events_received
+        )
 
 
 # =====================================================================

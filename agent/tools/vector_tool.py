@@ -15,10 +15,25 @@ EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 
 
 class VectorSearchInput(BaseModel):
-    query_text: str = Field(..., description="Semantic search query, e.g. 'reasons for cloud revenue growth'")
-    top_k: int = Field(default=5, ge=1, le=20, description="Number of context chunks to retrieve")
-    record_id: str | None = Field(default=None, description="Filter search to a specific document record")
-    split: str | None = Field(default=None, description="Filter search by dataset split ('train', 'dev', 'test')")
+    query_text: str = Field(
+        ...,
+        description="Semantic search query, e.g. 'reasons for cloud revenue growth'",
+    )
+    top_k: int = Field(
+        default=5, ge=1, le=20, description="Number of context chunks to retrieve"
+    )
+    record_id: str | None = Field(
+        default=None, description="Filter search to a specific document record"
+    )
+    record_ids: list[str] | None = Field(
+        default=None,
+        description="Filter search to a set of document records (e.g. all filings of one company) — "
+        "used by record anchoring so the top chunk identifies the right filing.",
+    )
+    split: str | None = Field(
+        default=None,
+        description="Filter search by dataset split ('train', 'dev', 'test')",
+    )
 
 
 class VectorChunkRecord(BaseModel):
@@ -81,6 +96,7 @@ class VectorRetrievalTool:
         query_text: str,
         top_k: int = 5,
         record_id: str | None = None,
+        record_ids: list[str] | None = None,
         split: str | None = None,
     ) -> VectorSearchOutput:
         conn = self._get_connection()
@@ -96,6 +112,7 @@ class VectorRetrievalTool:
             1.0 - (embedding <=> %(embedding)s::vector) AS similarity
         FROM document_chunks
         WHERE (%(record_id)s IS NULL OR record_id = %(record_id)s)
+          AND (%(record_ids)s IS NULL OR record_id = ANY(%(record_ids)s))
           AND (%(split)s IS NULL OR split = %(split)s)
         ORDER BY embedding <=> %(embedding)s::vector
         LIMIT %(limit)s;
@@ -105,6 +122,7 @@ class VectorRetrievalTool:
         params: dict[str, Any] = {
             "embedding": str(query_emb),
             "record_id": record_id,
+            "record_ids": record_ids,
             "split": split,
             "limit": top_k,
         }
@@ -150,5 +168,6 @@ def vector_retrieval_tool(
         query_text=payload.query_text,
         top_k=payload.top_k,
         record_id=payload.record_id,
+        record_ids=payload.record_ids,
         split=payload.split,
     )

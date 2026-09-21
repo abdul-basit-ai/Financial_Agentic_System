@@ -187,7 +187,15 @@ def test_sandbox_scrubs_environment_secrets() -> None:
     for k in passed_keys:
         assert not any(
             s in k.upper()
-            for s in ["KEY", "TOKEN", "SECRET", "PASSWORD", "NEO4J", "POSTGRES", "REDIS"]
+            for s in [
+                "KEY",
+                "TOKEN",
+                "SECRET",
+                "PASSWORD",
+                "NEO4J",
+                "POSTGRES",
+                "REDIS",
+            ]
         ), f"Sensitive env var '{k}' leaked into sandbox environment"
 
 

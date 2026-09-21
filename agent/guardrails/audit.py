@@ -76,7 +76,9 @@ class MerkleAuditLedger:
     def verify_integrity(self) -> tuple[bool, str]:
         """Validates that the Merkle hash chain has not been tampered with or altered."""
         for i, entry in enumerate(self.entries):
-            expected_prev = self.entries[i - 1].entry_hash if i > 0 else self.GENESIS_HASH
+            expected_prev = (
+                self.entries[i - 1].entry_hash if i > 0 else self.GENESIS_HASH
+            )
             if entry.prev_hash != expected_prev:
                 return False, f"Broken chain link at index {i}: prev_hash mismatch."
 
@@ -86,6 +88,9 @@ class MerkleAuditLedger:
             )
             recomputed = hashlib.sha256(compound_raw.encode("utf-8")).hexdigest()
             if recomputed != entry.entry_hash:
-                return False, f"Tampered record at index {i}: entry_hash recomputation failed."
+                return (
+                    False,
+                    f"Tampered record at index {i}: entry_hash recomputation failed.",
+                )
 
         return True, "Audit chain fully verified. Zero discrepancies found."

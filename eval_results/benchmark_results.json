@@ -1,25 +1,27 @@
 {
   "split": "dev",
   "total_samples": 25,
-  "execution_accuracy": 0.08,
+  "execution_accuracy": 0.28,
   "results": [
     {
       "record_id": "V/2008/page_17.pdf-1",
-      "predicted_answer": 3.0,
+      "predicted_answer": 127.4,
       "gold_answer": 127.4,
-      "execution_correct": false,
+      "execution_correct": true,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.2,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0,
+        "recall_graph": 1.0,
+        "recall_vector": 0.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 38637.012,
+      "taxonomy": "CORRECT",
+      "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
+      "latency_ms": 39413.887,
       "token_cost_usd": 0.0,
-      "trace_id": "eb86a957-92a7-42b3-adfa-677265f4106c"
+      "trace_id": "094ba493-8493-4abb-9fd0-7bb1b4ea55f8"
     },
     {
       "record_id": "C/2017/page_328.pdf-1",
@@ -28,38 +30,42 @@
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0,
+        "recall_graph": 1.0,
+        "recall_vector": 1.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 4425.164,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 18409.218,
       "token_cost_usd": 0.0,
-      "trace_id": "27c6b8b3-aad8-402f-8334-eab9a103c603"
+      "trace_id": "731dbde8-2ae2-43ab-81e0-9f126ac0d8fd"
     },
     {
       "record_id": "DVN/2007/page_58.pdf-2",
-      "predicted_answer": null,
+      "predicted_answer": 100.0,
       "gold_answer": 24.69136,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.8,
+        "mrr": 1.0,
+        "ndcg_at_k": 0.9469,
+        "recall_graph": 1.0,
+        "recall_vector": 0.3333
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 411.957,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 22032.287,
       "token_cost_usd": 0.0,
-      "trace_id": "447d3557-8a93-43e1-a8b4-be962aa9e5ee"
+      "trace_id": "82adc7a9-f16f-42c2-a382-5efc0f8c04dd"
     },
     {
       "record_id": "ETR/2011/page_341.pdf-3",
-      "predicted_answer": 2010.0,
+      "predicted_answer": 0.0,
       "gold_answer": 19.2,
       "execution_correct": false,
       "program_correct": false,
@@ -67,31 +73,35 @@
         "recall_at_k": 0.0,
         "precision_at_k": 0.0,
         "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "ndcg_at_k": 0.0,
+        "recall_graph": 0.0,
+        "recall_vector": 0.0
       },
       "taxonomy": "RETRIEVAL_MISS",
       "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 32797.224,
+      "latency_ms": 13066.671,
       "token_cost_usd": 0.0,
-      "trace_id": "32d641b6-b55c-4baa-875b-68ddc13a3fd3"
+      "trace_id": "6a94edbd-8f3e-4670-890a-ce08c563c2c8"
     },
     {
       "record_id": "ETR/2004/page_213.pdf-2",
-      "predicted_answer": null,
+      "predicted_answer": 59.1,
       "gold_answer": 0.60306,
-      "execution_correct": false,
+      "execution_correct": true,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.3333,
-        "precision_at_k": 1.0,
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.8,
         "mrr": 1.0,
-        "ndcg_at_k": 0.4693
+        "ndcg_at_k": 1.0,
+        "recall_graph": 0.6667,
+        "recall_vector": 0.6667
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.33) failed to retrieve all gold evidence items.",
-      "latency_ms": 920.094,
+      "taxonomy": "CORRECT",
+      "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
+      "latency_ms": 24030.425,
       "token_cost_usd": 0.0,
-      "trace_id": "69546e40-0abb-4efa-8257-d440b6b6f3a2"
+      "trace_id": "4417be3d-248c-4c65-b400-c7d895fbced2"
     },
     {
       "record_id": "PM/2017/page_38.pdf-1",
@@ -103,13 +113,15 @@
         "recall_at_k": 1.0,
         "precision_at_k": 1.0,
         "mrr": 1.0,
-        "ndcg_at_k": 1.0
+        "ndcg_at_k": 1.0,
+        "recall_graph": 1.0,
+        "recall_vector": 1.0
       },
       "taxonomy": "CORRECT",
       "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
-      "latency_ms": 26289.21,
+      "latency_ms": 13884.336,
       "token_cost_usd": 0.0,
-      "trace_id": "3d436da5-d5d5-4ef1-810b-27c158ab3c73"
+      "trace_id": "e2622feb-7b8e-4dde-a29f-e6693a35bf02"
     },
     {
       "record_id": "JPM/2008/page_85.pdf-3",
@@ -118,74 +130,82 @@
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0,
+        "recall_graph": 1.0,
+        "recall_vector": 1.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 4575.456,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 16454.155,
       "token_cost_usd": 0.0,
-      "trace_id": "04a335f1-5b22-4c86-84a8-4da189488c44"
+      "trace_id": "c7dbe534-8566-495e-90a7-59db1eb2b387"
     },
     {
       "record_id": "PNC/2013/page_207.pdf-1",
-      "predicted_answer": 2014.0,
+      "predicted_answer": 100.0,
       "gold_answer": 30.44323,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.2,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0,
+        "recall_graph": 1.0,
+        "recall_vector": 1.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 2945.479,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 10914.613,
       "token_cost_usd": 0.0,
-      "trace_id": "86a0868e-3f21-4393-adee-b92c843f4275"
+      "trace_id": "bc460fe8-8b4b-433d-97fb-c8420245b48b"
     },
     {
       "record_id": "CME/2017/page_97.pdf-5",
-      "predicted_answer": 3.0,
+      "predicted_answer": 2017.0,
       "gold_answer": 995.0,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.6,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0,
+        "recall_graph": 1.0,
+        "recall_vector": 0.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 2818.331,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 25792.087,
       "token_cost_usd": 0.0,
-      "trace_id": "7593d52e-cc7f-464a-97e2-9bb372aade49"
+      "trace_id": "6f94e6e4-91be-4945-9fd1-b865f3cddb43"
     },
     {
       "record_id": "PNC/2013/page_62.pdf-2",
-      "predicted_answer": 2013.0,
+      "predicted_answer": 31.0,
       "gold_answer": 3576.0,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.6,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0,
+        "recall_graph": 1.0,
+        "recall_vector": 0.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 2696.596,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 14284.219,
       "token_cost_usd": 0.0,
-      "trace_id": "a560eb35-d39f-4ec3-a907-63826a9fa62a"
+      "trace_id": "14755c98-cf9f-46bf-864f-a97a4df48df8"
     },
     {
       "record_id": "AAPL/2004/page_36.pdf-2",
-      "predicted_answer": null,
+      "predicted_answer": 2004.0,
       "gold_answer": 0.2,
       "execution_correct": false,
       "program_correct": false,
@@ -193,13 +213,15 @@
         "recall_at_k": 1.0,
         "precision_at_k": 1.0,
         "mrr": 1.0,
-        "ndcg_at_k": 1.0
+        "ndcg_at_k": 1.0,
+        "recall_graph": 1.0,
+        "recall_vector": 1.0
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 386.647,
+      "latency_ms": 18252.175,
       "token_cost_usd": 0.0,
-      "trace_id": "79620536-7f6a-4270-b846-406f573ac846"
+      "trace_id": "1e3ded55-4535-4232-99b1-cebde5acdd3e"
     },
     {
       "record_id": "PKG/2009/page_65.pdf-4",
@@ -211,13 +233,15 @@
         "recall_at_k": 0.0,
         "precision_at_k": 0.0,
         "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "ndcg_at_k": 0.0,
+        "recall_graph": 1.0,
+        "recall_vector": 0.0
       },
       "taxonomy": "RETRIEVAL_MISS",
       "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 9245.141,
+      "latency_ms": 23731.986,
       "token_cost_usd": 0.0,
-      "trace_id": "5f70942e-7417-47df-9548-e49deb493437"
+      "trace_id": "c79c3f0a-fd0a-497f-9f83-e7bf564cbfdf"
     },
     {
       "record_id": "LMT/2013/page_74.pdf-4",
@@ -227,87 +251,97 @@
       "program_correct": true,
       "ir_metrics": {
         "recall_at_k": 1.0,
-        "precision_at_k": 1.0,
+        "precision_at_k": 0.6,
         "mrr": 1.0,
-        "ndcg_at_k": 1.0
+        "ndcg_at_k": 1.0,
+        "recall_graph": 1.0,
+        "recall_vector": 1.0
       },
       "taxonomy": "CORRECT",
       "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
-      "latency_ms": 13898.067,
+      "latency_ms": 12369.782,
       "token_cost_usd": 0.0,
-      "trace_id": "4fa0f1de-9ddd-4635-af92-ffa0ff541494"
+      "trace_id": "a5fc6f2a-4fd4-4ad6-a32b-274221761af7"
     },
     {
       "record_id": "STT/2011/page_83.pdf-1",
-      "predicted_answer": null,
+      "predicted_answer": 2011.0,
       "gold_answer": 114.0,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.6,
+        "mrr": 0.5,
+        "ndcg_at_k": 0.6309,
+        "recall_graph": 0.0,
+        "recall_vector": 1.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 311.339,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 19083.649,
       "token_cost_usd": 0.0,
-      "trace_id": "6fb85b9b-b00f-45ba-8ced-40b8dd55cd19"
+      "trace_id": "57b92895-d794-4ea3-b48c-24a95a0bf184"
     },
     {
       "record_id": "MRO/2007/page_149.pdf-2",
-      "predicted_answer": null,
+      "predicted_answer": 2008.0,
       "gold_answer": 2057.0,
-      "execution_correct": false,
+      "execution_correct": true,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.4,
+        "mrr": 0.5,
+        "ndcg_at_k": 0.6309,
+        "recall_graph": 1.0,
+        "recall_vector": 1.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 347.671,
+      "taxonomy": "CORRECT",
+      "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
+      "latency_ms": 21666.745,
       "token_cost_usd": 0.0,
-      "trace_id": "c42d28e6-6efe-47af-a9f6-7575ca189c81"
+      "trace_id": "89be7969-2865-474c-a830-a6a2b194b422"
     },
     {
       "record_id": "AOS/2004/page_11.pdf-2",
-      "predicted_answer": 2014.0,
+      "predicted_answer": 100.0,
       "gold_answer": 0.34011,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
         "recall_at_k": 0.5,
-        "precision_at_k": 1.0,
+        "precision_at_k": 0.2,
         "mrr": 1.0,
-        "ndcg_at_k": 0.6131
+        "ndcg_at_k": 0.6131,
+        "recall_graph": 1.0,
+        "recall_vector": 0.0
       },
       "taxonomy": "RETRIEVAL_MISS",
       "taxonomy_explanation": "Information deficit: recall@k (0.50) failed to retrieve all gold evidence items.",
-      "latency_ms": 8718.494,
+      "latency_ms": 20574.128,
       "token_cost_usd": 0.0,
-      "trace_id": "2b1fcb12-eb0a-4062-84d3-5f038066c8bb"
+      "trace_id": "2a6962c8-ce64-416a-85e5-de75dd7c857a"
     },
     {
       "record_id": "C/2010/page_223.pdf-3",
-      "predicted_answer": null,
+      "predicted_answer": 0.0,
       "gold_answer": -0.52485,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
         "recall_at_k": 0.5,
-        "precision_at_k": 0.2,
-        "mrr": 0.2,
-        "ndcg_at_k": 0.2372
+        "precision_at_k": 0.4,
+        "mrr": 0.5,
+        "ndcg_at_k": 0.3869,
+        "recall_graph": 1.0,
+        "recall_vector": 0.5
       },
       "taxonomy": "RETRIEVAL_MISS",
       "taxonomy_explanation": "Information deficit: recall@k (0.50) failed to retrieve all gold evidence items.",
-      "latency_ms": 323.018,
+      "latency_ms": 18056.802,
       "token_cost_usd": 0.0,
-      "trace_id": "8a59f7e6-5b04-4d17-92bb-a594003a59be"
+      "trace_id": "4547ea17-1319-427b-8996-e1f701043474"
     },
     {
       "record_id": "MSI/2006/page_61.pdf-3",
@@ -316,34 +350,38 @@
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.6,
+        "mrr": 0.5,
+        "ndcg_at_k": 0.6309,
+        "recall_graph": 1.0,
+        "recall_vector": 1.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 30601.305,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 13231.702,
       "token_cost_usd": 0.0,
-      "trace_id": "ed2e1de3-d168-4f2f-87eb-1b9a5243b4a1"
+      "trace_id": "8e77a6ad-51bd-4218-8328-6fcc93ba2b73"
     },
     {
       "record_id": "ABMD/2006/page_75.pdf-1",
-      "predicted_answer": null,
+      "predicted_answer": 4819.0,
       "gold_answer": 0.19495,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.2,
+        "mrr": 0.5,
+        "ndcg_at_k": 0.3869,
+        "recall_graph": 0.0,
+        "recall_vector": 1.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 370.796,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 23370.584,
       "token_cost_usd": 0.0,
-      "trace_id": "2ecc0d19-977c-49aa-a4d9-49c59e0dc631"
+      "trace_id": "de22f83e-f95b-43f8-966a-6e15c5f93bab"
     },
     {
       "record_id": "AMAT/2013/page_18.pdf-2",
@@ -352,52 +390,58 @@
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.4,
+        "mrr": 0.5,
+        "ndcg_at_k": 0.6309,
+        "recall_graph": 0.0,
+        "recall_vector": 1.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 8100.933,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 21780.758,
       "token_cost_usd": 0.0,
-      "trace_id": "bfc1c2b1-508e-4c0c-ae2d-8cf9dd5ce29d"
+      "trace_id": "b9481d83-e1f2-4c81-ac32-ab0a31764a02"
     },
     {
       "record_id": "DVN/2014/page_85.pdf-1",
-      "predicted_answer": 2015.0,
+      "predicted_answer": 44.8,
       "gold_answer": 44.8,
-      "execution_correct": false,
+      "execution_correct": true,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 0.1667,
+        "precision_at_k": 0.4,
+        "mrr": 0.5,
+        "ndcg_at_k": 0.214,
+        "recall_graph": 0.0,
+        "recall_vector": 0.1667
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 2650.29,
+      "taxonomy": "CORRECT",
+      "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
+      "latency_ms": 15333.399,
       "token_cost_usd": 0.0,
-      "trace_id": "e4620a6e-3b42-419b-8b99-aa91a4b13185"
+      "trace_id": "5204d12e-74a1-48a6-a3cc-faf29d594fe2"
     },
     {
       "record_id": "SPGI/2018/page_74.pdf-1",
-      "predicted_answer": 2017.0,
+      "predicted_answer": 1.0,
       "gold_answer": 1.15663,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.6,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0,
+        "recall_graph": 1.0,
+        "recall_vector": 1.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 2922.627,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 17934.845,
       "token_cost_usd": 0.0,
-      "trace_id": "4b41bec1-8177-48fc-a926-d09eec676ad3"
+      "trace_id": "7b1ce05f-9661-4734-9db4-022a0fc771ba"
     },
     {
       "record_id": "ZBH/2003/page_58.pdf-3",
@@ -406,52 +450,58 @@
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.8,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0,
+        "recall_graph": 1.0,
+        "recall_vector": 0.5
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 5996.931,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 17020.145,
       "token_cost_usd": 0.0,
-      "trace_id": "273ffdeb-50f5-4259-a9ef-d78ff4186a8a"
+      "trace_id": "993f67b5-1150-4aa7-a2ee-9e5649b2dea2"
     },
     {
       "record_id": "AMT/2005/page_105.pdf-2",
-      "predicted_answer": null,
+      "predicted_answer": 2418012.0,
       "gold_answer": 4575515.0,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 1.0,
+        "precision_at_k": 0.2,
+        "mrr": 0.25,
+        "ndcg_at_k": 0.4307,
+        "recall_graph": 1.0,
+        "recall_vector": 1.0
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 2930.351,
+      "taxonomy": "PLANNING_ERROR",
+      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
+      "latency_ms": 19638.412,
       "token_cost_usd": 0.0,
-      "trace_id": "48664d62-9249-4f06-bd48-7b98140a8dd0"
+      "trace_id": "b08794e5-746e-420b-b6fb-d7cdfa3b1027"
     },
     {
       "record_id": "ETR/2015/page_131.pdf-1",
-      "predicted_answer": 2016.0,
+      "predicted_answer": 2.7556583479926893,
       "gold_answer": 2.75566,
-      "execution_correct": false,
+      "execution_correct": true,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0
+        "recall_at_k": 0.3333,
+        "precision_at_k": 0.4,
+        "mrr": 0.5,
+        "ndcg_at_k": 0.2961,
+        "recall_graph": 0.0,
+        "recall_vector": 0.3333
       },
-      "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 4546.144,
+      "taxonomy": "CORRECT",
+      "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
+      "latency_ms": 12710.591,
       "token_cost_usd": 0.0,
-      "trace_id": "0fb8cdc0-c4b7-4cb3-8e6a-753eaa10a01a"
+      "trace_id": "dd5ff8f1-815e-4170-af03-2afcd5e43ece"
     }
   ]
 }

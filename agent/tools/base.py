@@ -13,19 +13,29 @@ T = TypeVar("T")
 
 class ToolMetrics(BaseModel):
     """Execution telemetry for agent tools."""
+
     latency_ms: float = Field(..., description="Wall-clock latency in milliseconds")
-    tokens_used: int = Field(default=0, description="Estimated or actual tokens consumed")
+    tokens_used: int = Field(
+        default=0, description="Estimated or actual tokens consumed"
+    )
     cost_usd: float = Field(default=0.0, description="Estimated API cost in USD")
 
 
 class ToolResult(BaseModel, Generic[T]):
     """Standardized envelope for tool execution results."""
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     tool_name: str = Field(..., description="Identifier of the executing tool")
-    success: bool = Field(..., description="Whether the tool execution succeeded without error")
-    data: T | None = Field(default=None, description="Typed payload returned by the tool")
-    error: str | None = Field(default=None, description="Error message if execution failed")
+    success: bool = Field(
+        ..., description="Whether the tool execution succeeded without error"
+    )
+    data: T | None = Field(
+        default=None, description="Typed payload returned by the tool"
+    )
+    error: str | None = Field(
+        default=None, description="Error message if execution failed"
+    )
     metrics: ToolMetrics = Field(..., description="Telemetry and execution metrics")
 
     @classmethod

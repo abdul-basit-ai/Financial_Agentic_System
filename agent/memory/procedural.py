@@ -30,9 +30,24 @@ STANDARD_ARCHETYPES: list[TrajectoryArchetype] = [
         description="Computes change, absolute delta, or percentage growth across two fiscal periods.",
         example_query="What was the percentage change in Apple's revenue from 2019 to 2020?",
         planned_steps=[
-            ExecutionStep(step_index=1, action_type="RETRIEVE", target_tool="graph_retrieval", rationale="Lookup period 1 value"),
-            ExecutionStep(step_index=2, action_type="RETRIEVE", target_tool="graph_retrieval", rationale="Lookup period 2 value"),
-            ExecutionStep(step_index=3, action_type="COMPUTE", target_tool="safe_math", rationale="Calculate difference and divide by base period"),
+            ExecutionStep(
+                step_index=1,
+                action_type="RETRIEVE",
+                target_tool="graph_retrieval",
+                rationale="Lookup period 1 value",
+            ),
+            ExecutionStep(
+                step_index=2,
+                action_type="RETRIEVE",
+                target_tool="graph_retrieval",
+                rationale="Lookup period 2 value",
+            ),
+            ExecutionStep(
+                step_index=3,
+                action_type="COMPUTE",
+                target_tool="safe_math",
+                rationale="Calculate difference and divide by base period",
+            ),
         ],
         few_shot_prompt=(
             "Plan:\n"
@@ -47,9 +62,24 @@ STANDARD_ARCHETYPES: list[TrajectoryArchetype] = [
         description="Explains reasons, causes, or commentary regarding a line-item shift.",
         example_query="Why did operating income decrease in 2020?",
         planned_steps=[
-            ExecutionStep(step_index=1, action_type="RETRIEVE_STRUCTURED", target_tool="graph_retrieval", rationale="Verify underlying operating values"),
-            ExecutionStep(step_index=2, action_type="RETRIEVE_NARRATIVE", target_tool="vector_retrieval", rationale="Search MD&A text chunks for drivers"),
-            ExecutionStep(step_index=3, action_type="FUSE", target_tool="context_fusion", rationale="Synthesize numbers with narrative reasoning"),
+            ExecutionStep(
+                step_index=1,
+                action_type="RETRIEVE_STRUCTURED",
+                target_tool="graph_retrieval",
+                rationale="Verify underlying operating values",
+            ),
+            ExecutionStep(
+                step_index=2,
+                action_type="RETRIEVE_NARRATIVE",
+                target_tool="vector_retrieval",
+                rationale="Search MD&A text chunks for drivers",
+            ),
+            ExecutionStep(
+                step_index=3,
+                action_type="FUSE",
+                target_tool="context_fusion",
+                rationale="Synthesize numbers with narrative reasoning",
+            ),
         ],
         few_shot_prompt=(
             "Plan:\n"

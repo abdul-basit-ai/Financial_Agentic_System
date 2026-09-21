@@ -7,14 +7,9 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from agent.memory.episodic import (
-    compute_recency_score,
-)
+from agent.memory.episodic import compute_recency_score
 from agent.memory.procedural import ProceduralMemoryBank
-from agent.memory.promoter import (
-    MemoryPromotionEngine,
-    calculate_episode_importance,
-)
+from agent.memory.promoter import MemoryPromotionEngine, calculate_episode_importance
 from agent.memory.working import get_checkpointer
 from agent.state.schema import (
     AgentStateV1,
@@ -30,7 +25,9 @@ from agent.tools.memory_tool import MemoryQueryInput
 
 
 def test_agent_state_v1_validation() -> None:
-    state = AgentStateV1(input="What was Amazon's 2020 revenue?", company_identifier="AMZN")
+    state = AgentStateV1(
+        input="What was Amazon's 2020 revenue?", company_identifier="AMZN"
+    )
     assert state.trace_id is not None
     assert state.iteration_count == 0
     assert state.hitl_status == "NONE"

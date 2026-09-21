@@ -5,21 +5,9 @@ from __future__ import annotations
 import pytest
 
 from agent.tools.decomposer import DecompositionInput, decompose_query
-from agent.tools.fusion_tool import (
-    ContextFusionInput,
-    reciprocal_rank_fusion,
-)
-from agent.tools.graph_tool import (
-    FORBIDDEN_CYPHER_MUTATIONS,
-    GraphMetricRecord,
-    GraphQueryInput,
-)
-from agent.tools.safe_math import (
-    ASTSecurityError,
-    SafeMathEvaluator,
-    SafeMathInput,
-    safe_math_tool,
-)
+from agent.tools.fusion_tool import ContextFusionInput, reciprocal_rank_fusion
+from agent.tools.graph_tool import FORBIDDEN_CYPHER_MUTATIONS, GraphMetricRecord, GraphQueryInput
+from agent.tools.safe_math import ASTSecurityError, SafeMathEvaluator, SafeMathInput, safe_math_tool
 from agent.tools.vector_tool import VectorChunkRecord, VectorSearchInput
 
 # =====================================================================
@@ -150,12 +138,25 @@ def test_query_decomposer_identifies_yoy_and_metrics() -> None:
     out = decompose_query(q, company="AAPL")
 
     assert out.is_multi_hop is True
-    assert len(out.sub_tasks) == 3
-    assert out.sub_tasks[0].query_payload["year"] == 2019
-    assert out.sub_tasks[0].query_payload["metric_name"] == "revenue"
-    assert out.sub_tasks[1].query_payload["year"] == 2020
-    assert out.sub_tasks[1].query_payload["metric_name"] == "revenue"
-    assert out.sub_tasks[2].target_tool == "safe_math"
+    assert len(out.sub_tasks) == 4
+    # task_1 is the vector anchor scoped to the company's filings
+    anchor = out.sub_tasks[0]
+    assert anchor.target_tool == "vector_retrieval"
+    assert anchor.query_payload["company_identifier"] == "AAPL"
+    assert anchor.dependencies == []
+    # graph tasks depend on the anchor
+    g1, g2 = out.sub_tasks[1], out.sub_tasks[2]
+    assert g1.query_payload["year"] == 2019
+    assert g1.query_payload["metric_name"] == "revenue"
+    assert g2.query_payload["year"] == 2020
+    assert g1.dependencies == ["task_1"]
+    assert g2.dependencies == ["task_1"]
+    # math consumes the graph tasks
+    math_task = out.sub_tasks[3]
+    assert math_task.target_tool == "safe_math"
+    assert math_task.dependencies == ["task_2", "task_3"]
+    assert "task_3.amount" in math_task.query_payload["expression"]
+    assert "task_2.amount" in math_task.query_payload["expression"]
 
 
 # =====================================================================

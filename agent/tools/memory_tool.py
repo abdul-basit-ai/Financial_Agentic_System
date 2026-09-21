@@ -12,14 +12,18 @@ from agent.tools.base import ToolResult
 
 
 class MemoryQueryInput(BaseModel):
-    query_text: str = Field(..., description="Semantic query to match past episodes or patterns")
+    query_text: str = Field(
+        ..., description="Semantic query to match past episodes or patterns"
+    )
     company_identifier: str | None = Field(
         default=None, description="Company filter for episodic memory"
     )
     include_procedural: bool = Field(
         default=True, description="Whether to include matching execution archetypes"
     )
-    top_k: int = Field(default=3, ge=1, le=10, description="Max episodic memories to return")
+    top_k: int = Field(
+        default=3, ge=1, le=10, description="Max episodic memories to return"
+    )
 
 
 class MemoryQueryOutput(BaseModel):
@@ -56,8 +60,11 @@ class MemoryRetrievalTool:
         except Exception as exc:
             # Degrade gracefully to zero episodic context, but surface the reason
             # (Phase 12 tracing needs this; silent swallowing hides config errors).
-            print(f"[memory_tool] episodic retrieval degraded: "
-                  f"{type(exc).__name__}: {exc}", flush=True)
+            print(
+                f"[memory_tool] episodic retrieval degraded: "
+                f"{type(exc).__name__}: {exc}",
+                flush=True,
+            )
             episodes = []
 
         formatted_episodes = [

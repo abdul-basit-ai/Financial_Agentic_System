@@ -65,7 +65,11 @@ class PersistentMerkleAuditLedger(MerkleAuditLedger):
         super().__init__()
         self.conn_params: dict[str, Any] = {
             "host": host or os.getenv("POSTGRES_HOST", "localhost"),
-            "port": int(port) if port is not None else int(os.getenv("POSTGRES_PORT", "5432")),
+            "port": (
+                int(port)
+                if port is not None
+                else int(os.getenv("POSTGRES_PORT", "5432"))
+            ),
             "dbname": dbname or os.getenv("POSTGRES_DB", "financial_agent"),
             "user": user or os.getenv("POSTGRES_USER", "postgres"),
             "password": password or os.getenv("POSTGRES_PASSWORD", "password"),
@@ -226,7 +230,9 @@ class PersistentMerkleAuditLedger(MerkleAuditLedger):
                         state_hash=r["state_hash"],
                         prev_hash=r["prev_hash"],
                         entry_hash=r["entry_hash"],
-                        metadata=r["metadata"] if isinstance(r["metadata"], dict) else {},
+                        metadata=(
+                            r["metadata"] if isinstance(r["metadata"], dict) else {}
+                        ),
                     )
                     for r in rows
                 ]

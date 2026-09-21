@@ -6,16 +6,8 @@ from typing import Any
 
 from agent.state.schema import AgentStateV1
 from agent.tools.fusion_tool import ContextFusionInput, context_fusion_tool
-from agent.tools.graph_tool import (
-    GraphMetricRecord,
-    GraphQueryInput,
-    graph_retrieval_tool,
-)
-from agent.tools.vector_tool import (
-    VectorChunkRecord,
-    VectorSearchInput,
-    vector_retrieval_tool,
-)
+from agent.tools.graph_tool import GraphMetricRecord, GraphQueryInput, graph_retrieval_tool
+from agent.tools.vector_tool import VectorChunkRecord, VectorSearchInput, vector_retrieval_tool
 
 
 def retrieve_graph_node(state: AgentStateV1) -> dict[str, Any]:
@@ -25,24 +17,33 @@ def retrieve_graph_node(state: AgentStateV1) -> dict[str, Any]:
     scratchpad_logs: list[str] = []
 
     for call in state.tool_calls:
-        if call.get("target_tool") == "graph_retrieval" and call.get("status") == "PENDING":
+        if (
+            call.get("target_tool") == "graph_retrieval"
+            and call.get("status") == "PENDING"
+        ):
             payload = call.get("payload", {})
             query_input = GraphQueryInput(
-                company_identifier=payload.get("company_identifier", state.company_identifier or "UNKNOWN"),
+                company_identifier=payload.get(
+                    "company_identifier", state.company_identifier or "UNKNOWN"
+                ),
                 metric_name=payload.get("metric_name"),
                 year=payload.get("year"),
                 record_id=payload.get("record_id"),
             )
             result = graph_retrieval_tool(query_input)
-            executed_results.append({
-                "task_id": call.get("task_id"),
-                "tool_name": "graph_retrieval",
-                "success": result.success,
-                "data": result.data.model_dump() if result.data else None,
-                "error": result.error,
-            })
+            executed_results.append(
+                {
+                    "task_id": call.get("task_id"),
+                    "tool_name": "graph_retrieval",
+                    "success": result.success,
+                    "data": result.data.model_dump() if result.data else None,
+                    "error": result.error,
+                }
+            )
             count = result.data.total_found if result.data else 0
-            scratchpad_logs.append(f"[Graph Retrieval] Fetched {count} records for year={payload.get('year')}, metric={payload.get('metric_name')}.")
+            scratchpad_logs.append(
+                f"[Graph Retrieval] Fetched {count} records for year={payload.get('year')}, metric={payload.get('metric_name')}."
+            )
         else:
             remaining_calls.append(dict(call))
     # Executed calls leave the queue; no need to re-add their updated copies.
@@ -62,22 +63,29 @@ def retrieve_vector_node(state: AgentStateV1) -> dict[str, Any]:
     scratchpad_logs: list[str] = []
 
     for call in state.tool_calls:
-        if call.get("target_tool") == "vector_retrieval" and call.get("status") == "PENDING":
+        if (
+            call.get("target_tool") == "vector_retrieval"
+            and call.get("status") == "PENDING"
+        ):
             payload = call.get("payload", {})
             query_input = VectorSearchInput(
                 query_text=payload.get("query_text", state.input),
                 top_k=payload.get("top_k", 5),
             )
             result = vector_retrieval_tool(query_input)
-            executed_results.append({
-                "task_id": call.get("task_id"),
-                "tool_name": "vector_retrieval",
-                "success": result.success,
-                "data": result.data.model_dump() if result.data else None,
-                "error": result.error,
-            })
+            executed_results.append(
+                {
+                    "task_id": call.get("task_id"),
+                    "tool_name": "vector_retrieval",
+                    "success": result.success,
+                    "data": result.data.model_dump() if result.data else None,
+                    "error": result.error,
+                }
+            )
             count = result.data.total_found if result.data else 0
-            scratchpad_logs.append(f"[Vector Retrieval] Fetched {count} narrative chunks for query: '{payload.get('query_text')}'.")
+            scratchpad_logs.append(
+                f"[Vector Retrieval] Fetched {count} narrative chunks for query: '{payload.get('query_text')}'."
+            )
         else:
             remaining_calls.append(dict(call))
 
@@ -120,7 +128,8 @@ def fuse_context_node(state: AgentStateV1) -> dict[str, Any]:
         if r.get("task_id")
     }
     parallel_only = [
-        env for tid, env in state.sub_task_results.items()
+        env
+        for tid, env in state.sub_task_results.items()
         if isinstance(env, dict) and (tid, env.get("tool_name")) not in seen
     ]
     _collect(parallel_only)

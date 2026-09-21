@@ -41,20 +41,24 @@ def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
         error_msg = f"Unsupported tool '{target_tool}' in sub_task_worker"
         log_entry = f"[Parallel Worker: {task_id}] Failed: {error_msg}"
         return {
-            "sub_task_results": {task_id: {
-                "task_id": task_id,
-                "tool_name": target_tool,
-                "success": False,
-                "data": None,
-                "error": error_msg,
-            }},
-            "tool_results": [{
-                "task_id": task_id,
-                "tool_name": target_tool,
-                "success": False,
-                "data": None,
-                "error": error_msg,
-            }],
+            "sub_task_results": {
+                task_id: {
+                    "task_id": task_id,
+                    "tool_name": target_tool,
+                    "success": False,
+                    "data": None,
+                    "error": error_msg,
+                }
+            },
+            "tool_results": [
+                {
+                    "task_id": task_id,
+                    "tool_name": target_tool,
+                    "success": False,
+                    "data": None,
+                    "error": error_msg,
+                }
+            ],
             "scratchpad": [log_entry],
         }
 
@@ -98,16 +102,31 @@ def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
             log_entry = f"[Parallel Worker: {task_id}] Graph retrieved {count} records.{contention_note}"
 
         elif target_tool == "vector_retrieval":
+            # Record anchoring, stage 1: restrict semantic search to the
+            # anchored filing when known (planner injected it), else to the
+            # company's own filings so the top chunk identifies the filing
+            # the question is actually about (fan_out_router forwards that
+            # record_id into the dependent graph_retrieval payloads).
+            company = tool_payload.get("company_identifier")
+            record_id = tool_payload.get("record_id")
+            record_ids = None
+            if not record_id and company:
+                from agent.tools.graph_tool import list_company_record_ids
+
+                record_ids = list_company_record_ids(company) or None
             query_input = VectorSearchInput(
                 query_text=tool_payload.get("query_text", ""),
                 top_k=tool_payload.get("top_k", 5),
+                record_id=record_id,
+                record_ids=record_ids,
             )
             res = vector_retrieval_tool(query_input)
             success = res.success
             result_data = res.data.model_dump() if res.data else None
             error_msg = res.error
             count = res.data.total_found if res.data else 0
-            log_entry = f"[Parallel Worker: {task_id}] Vector retrieved {count} chunks.{contention_note}"
+            scope_note = " (company-scoped)" if record_ids else ""
+            log_entry = f"[Parallel Worker: {task_id}] Vector retrieved {count} chunks{scope_note}.{contention_note}"
 
         elif target_tool == "safe_math":
             raw_expr = tool_payload.get("expression", "0")
@@ -133,6 +152,39 @@ def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _anchor_record_id(state: AgentStateV1, deps: list[str]) -> str | None:
+    """Extracts the anchoring record_id from a completed vector task.
+
+    The top chunk of the company-scoped vector search identifies the filing
+    the question is actually about; graph retrieval is scoped to it so the
+    math consumes values from the right document, not arbitrary filings.
+
+    Year-aware preference: companies file maturity-schedule tables in MANY
+    years (a 2003 filing also discusses "long-term debt maturities" — for
+    2004-2008). When the question names fiscal years, prefer the first chunk
+    whose text mentions one of them; fall back to the plain top chunk.
+    """
+    import re
+
+    year_tokens = set(re.findall(r"\b(?:19|20)\d{2}\b", state.input))
+
+    for dep in deps:
+        env = state.sub_task_results.get(dep)
+        if not isinstance(env, dict) or env.get("tool_name") != "vector_retrieval":
+            continue
+        chunks = (env.get("data") or {}).get("chunks") or []
+        if not chunks:
+            continue
+        if year_tokens:
+            for ch in chunks:
+                text = str(ch.get("text_content", ""))
+                if any(y in text for y in year_tokens) and ch.get("record_id"):
+                    return str(ch["record_id"])
+        if chunks[0].get("record_id"):
+            return str(chunks[0]["record_id"])
+    return None
+
+
 def fan_out_router(state: AgentStateV1) -> list[Send] | str:
     """Evaluates pending sub-tasks and dynamically fans out independent branches via Send."""
     ready_tasks: list[dict[str, Any]] = []
@@ -147,14 +199,30 @@ def fan_out_router(state: AgentStateV1) -> list[Send] | str:
                     ready_tasks.append(call)
 
     if ready_tasks:
-        return [
-            Send("sub_task_worker", {
-                "task_id": t.get("task_id"),
-                "target_tool": t.get("target_tool"),
-                "payload": t.get("payload", {}),
-            })
-            for t in ready_tasks
-        ]
+        sends: list[Send] = []
+        for t in ready_tasks:
+            payload = dict(t.get("payload", {}))
+            if t.get("target_tool") == "graph_retrieval" and not payload.get(
+                "record_id"
+            ):
+                # Explicit caller anchor wins; vector-top-1 heuristic is the
+                # fallback for free-form queries with no known filing.
+                anchor = state.record_id or _anchor_record_id(
+                    state, t.get("dependencies", [])
+                )
+                if anchor:
+                    payload["record_id"] = anchor
+            sends.append(
+                Send(
+                    "sub_task_worker",
+                    {
+                        "task_id": t.get("task_id"),
+                        "target_tool": t.get("target_tool"),
+                        "payload": payload,
+                    },
+                )
+            )
+        return sends
 
     # Check if a safe_math task is ready
     has_pending_math = any(
@@ -175,7 +243,9 @@ def fan_out_router_node(state: AgentStateV1) -> dict[str, Any]:
     """No-op node for EDIT re-entry: exists so conditional edges from eval_risk
     can land on a node that re-dispatches the Send fan-out. Marks the risk
     re-check as complete for this pass."""
-    return {"scratchpad": ["[Fan-Out] Re-dispatching edited sub-tasks under governance."]}
+    return {
+        "scratchpad": ["[Fan-Out] Re-dispatching edited sub-tasks under governance."]
+    }
 
 
 def aggregate_sub_tasks_node(state: AgentStateV1) -> dict[str, Any]:

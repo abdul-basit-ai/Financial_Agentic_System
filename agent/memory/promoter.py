@@ -25,9 +25,7 @@ class MemoryPromotionEngine:
     def __init__(self, episodic_store: EpisodicMemoryStore | None = None) -> None:
         self.episodic_store = episodic_store or EpisodicMemoryStore()
 
-    def promote_session(
-        self, session_id: str, state: AgentStateV1
-    ) -> int | None:
+    def promote_session(self, session_id: str, state: AgentStateV1) -> int | None:
         # Promotion Filter: Do not record incomplete or failed sessions
         if not state.final_answer and not state.sub_task_results:
             return None

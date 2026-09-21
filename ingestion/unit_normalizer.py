@@ -17,7 +17,8 @@ UNIT_MULTIPLIERS = {
 }
 
 UNIT_RE = re.compile(
-    r"\b(thousand|thousands|million|millions|billion|billions|trillion|trillions)\b", re.IGNORECASE
+    r"\b(thousand|thousands|million|millions|billion|billions|trillion|trillions)\b",
+    re.IGNORECASE,
 )
 
 
@@ -37,7 +38,9 @@ def normalize_value(value: float | None, unit_label: str) -> float | None:
     return value * mult
 
 
-def normalize_with_context(value: float | None, *context_texts: Any) -> dict[str, float | None]:
+def normalize_with_context(
+    value: float | None, *context_texts: Any
+) -> dict[str, float | None]:
     unit = detect_unit_label(*context_texts)
     return {
         "unit_label": unit,

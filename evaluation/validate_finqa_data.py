@@ -69,7 +69,9 @@ def compare_record(
 
     # Shape and count checks.
     raw_table = raw.get("table", []) if isinstance(raw.get("table"), list) else []
-    parsed_table = parsed.get("table", []) if isinstance(parsed.get("table"), list) else []
+    parsed_table = (
+        parsed.get("table", []) if isinstance(parsed.get("table"), list) else []
+    )
     if len(parsed_table) != len(raw_table):
         anomalies.append("table_row_count_mismatch")
 
@@ -103,17 +105,21 @@ def compare_record(
                 missing_cells += 1
 
     pct = {
-        "table_missing_cell_pct": (missing_cells / total_cells * 100.0) if total_cells else 0.0,
-        "has_multi_year_table": 1.0
-        if any(
-            any(
-                str(c).strip().isdigit() and len(str(c).strip()) == 4
-                for c in row
-                if isinstance(row, list)
+        "table_missing_cell_pct": (
+            (missing_cells / total_cells * 100.0) if total_cells else 0.0
+        ),
+        "has_multi_year_table": (
+            1.0
+            if any(
+                any(
+                    str(c).strip().isdigit() and len(str(c).strip()) == 4
+                    for c in row
+                    if isinstance(row, list)
+                )
+                for row in raw_table
             )
-            for row in raw_table
-        )
-        else 0.0,
+            else 0.0
+        ),
     }
 
     # Edge tags consistency checks.
@@ -129,14 +135,16 @@ def validate_split(dataset_dir: str, parsed_dir: str, split: str) -> dict[str, A
     raw_by_id = index_raw_records(raw_records)
 
     parsed_path = os.path.join(parsed_dir, f"finqa_{split}_parsed.jsonl")
-    parsed_records = list(read_jsonl(parsed_path)) if os.path.exists(parsed_path) else []
+    parsed_records = (
+        list(read_jsonl(parsed_path)) if os.path.exists(parsed_path) else []
+    )
 
     coverage = {
         "raw_records": len(raw_records),
         "parsed_records": len(parsed_records),
-        "parsed_coverage_pct": (len(parsed_records) / len(raw_records) * 100.0)
-        if raw_records
-        else 0.0,
+        "parsed_coverage_pct": (
+            (len(parsed_records) / len(raw_records) * 100.0) if raw_records else 0.0
+        ),
     }
 
     anomalies = Counter()
@@ -167,11 +175,15 @@ def validate_split(dataset_dir: str, parsed_dir: str, split: str) -> dict[str, A
         if rid not in parsed_ids:
             anomalies["raw_record_missing_in_parsed"] += 1
 
-    summary_pct = {k: round(mean(vals), 4) if vals else 0.0 for k, vals in missing_pcts.items()}
+    summary_pct = {
+        k: round(mean(vals), 4) if vals else 0.0 for k, vals in missing_pcts.items()
+    }
 
     # Global missing percentages over records.
     record_count = max(1, len(raw_records))
-    missing_pct = {f"{k}_pct": round(v / record_count * 100.0, 4) for k, v in missing.items()}
+    missing_pct = {
+        f"{k}_pct": round(v / record_count * 100.0, 4) for k, v in missing.items()
+    }
 
     return {
         "split": split,
@@ -259,7 +271,9 @@ def main() -> None:
     )
     parser.add_argument("--dataset-dir", default="data/raw/FinQA-main/dataset")
     parser.add_argument("--parsed-dir", default="data/processed/parsed")
-    parser.add_argument("--out-json", default="data/processed/finqa_data_quality_report.json")
+    parser.add_argument(
+        "--out-json", default="data/processed/finqa_data_quality_report.json"
+    )
     parser.add_argument("--out-md", default="evaluation/FINQA_DATA_QUALITY_REPORT.md")
     parser.add_argument("--splits", nargs="+", default=SPLITS, choices=SPLITS)
     args = parser.parse_args()

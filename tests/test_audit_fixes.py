@@ -9,11 +9,7 @@ import json
 import pytest
 
 from agent.llm import extract_numerals
-from agent.nodes.plan_node import (
-    LLMPlan,
-    _extract_json,
-    _validate_llm_plan,
-)
+from agent.nodes.plan_node import LLMPlan, _extract_json, _validate_llm_plan
 from agent.nodes.synthesize_node import _is_grounded
 from agent.tools.graph_tool import _slugify
 from evaluation.evaluator import EvaluationRecord, FinQAEvaluator
@@ -233,7 +229,9 @@ def test_plan_node_falls_back_to_rules_without_llm(monkeypatch) -> None:
 
     monkeypatch.setattr(plan_module, "is_llm_enabled", lambda: False)
 
-    state = _minimal_state("What was the percentage change in Amazon operating revenue from 2019 to 2020?")
+    state = _minimal_state(
+        "What was the percentage change in Amazon operating revenue from 2019 to 2020?"
+    )
     outcome = plan_module.plan_node(state)
     assert outcome["tool_calls"], "fallback plan must schedule tasks"
     tools = {c["target_tool"] for c in outcome["tool_calls"]}
@@ -252,19 +250,29 @@ def test_plan_node_uses_valid_llm_plan(monkeypatch) -> None:
             {
                 "task_id": "task_1",
                 "target_tool": "graph_retrieval",
-                "query_payload": {"company_identifier": "AMZN", "year": 2019, "metric_name": "operating revenue"},
+                "query_payload": {
+                    "company_identifier": "AMZN",
+                    "year": 2019,
+                    "metric_name": "operating revenue",
+                },
                 "dependencies": [],
             },
             {
                 "task_id": "task_2",
                 "target_tool": "graph_retrieval",
-                "query_payload": {"company_identifier": "AMZN", "year": 2020, "metric_name": "operating revenue"},
+                "query_payload": {
+                    "company_identifier": "AMZN",
+                    "year": 2020,
+                    "metric_name": "operating revenue",
+                },
                 "dependencies": [],
             },
             {
                 "task_id": "task_3",
                 "target_tool": "safe_math",
-                "query_payload": {"expression": "subtract(task_2.amount, task_1.amount)"},
+                "query_payload": {
+                    "expression": "subtract(task_2.amount, task_1.amount)"
+                },
                 "dependencies": ["task_1", "task_2"],
             },
         ],
@@ -300,7 +308,9 @@ def test_plan_node_rejects_invalid_llm_plan(monkeypatch) -> None:
     monkeypatch.setattr(
         plan_module,
         "invoke_llm",
-        lambda **kwargs: type("R", (), {"content": "not json at all", "model": "fake"})(),
+        lambda **kwargs: type(
+            "R", (), {"content": "not json at all", "model": "fake"}
+        )(),
     )
 
     state = _minimal_state("Why did operating income decrease in 2020?")
@@ -353,7 +363,9 @@ def test_grounding_check_ignores_list_ordinals() -> None:
 # =====================================================================
 
 
-def test_run_regression_fails_loudly_without_states(tmp_path, monkeypatch, capsys) -> None:
+def test_run_regression_fails_loudly_without_states(
+    tmp_path, monkeypatch, capsys
+) -> None:
     """No recorded fixtures and no --live flag -> exit code 1 with a message
     that tells the operator how to generate fixtures (never a silent live run)."""
     from evaluation import run_regression
@@ -370,11 +382,16 @@ def test_run_regression_fails_loudly_without_states(tmp_path, monkeypatch, capsy
 
     states_dir = tmp_path / "states"  # does not exist
 
-    monkeypatch.setattr("sys.argv", [
-        "run_regression.py",
-        "--data-file", str(data_file),
-        "--states-dir", str(states_dir),
-    ])
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "run_regression.py",
+            "--data-file",
+            str(data_file),
+            "--states-dir",
+            str(states_dir),
+        ],
+    )
     exit_code = run_regression.main()
     assert exit_code == 1
     out = capsys.readouterr().out

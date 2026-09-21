@@ -12,6 +12,7 @@ from typing import Any
 
 from agent.graph import create_financial_agent
 from evaluation.evaluator import EvaluationRecord, EvaluationResult, FinQAEvaluator
+from ingestion.entity_extractor import extract_company_identifier
 
 
 def safe_record_filename(record_id: str) -> str:
@@ -24,7 +25,9 @@ def safe_record_filename(record_id: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", str(record_id))
 
 
-def load_finqa_records(filepath: str, limit: int | None = None) -> list[EvaluationRecord]:
+def load_finqa_records(
+    filepath: str, limit: int | None = None
+) -> list[EvaluationRecord]:
     """Loads normalized FinQA records. Field paths follow the Phase 2 schema:
     document.execution_answer, reasoning.program, reasoning.gold_indices."""
     records: list[EvaluationRecord] = []
@@ -45,11 +48,17 @@ def load_finqa_records(filepath: str, limit: int | None = None) -> list[Evaluati
             gold_inds = [str(k) for k in gold_indices.keys()]
             gold_evidence = [str(v) for v in gold_indices.values() if str(v).strip()]
 
-            company = None
-            entities = item.get("entities", {})
-            company_list = entities.get("company_names") or []
-            if company_list:
-                company = company_list[0]
+            # The filename ticker IS the filer (FinQA ground truth).
+            # company_names mixes in-text mentions with the ticker and is
+            # alphabetically sorted — company_names[0] can be a company the
+            # narrative merely compares against, anchoring retrieval on the
+            # wrong firm.
+            company = extract_company_identifier(str(doc.get("filename", "")))
+            if not company:
+                entities = item.get("entities", {})
+                company_list = entities.get("company_names") or []
+                if company_list:
+                    company = company_list[0]
 
             gold_answer = doc.get("execution_answer")
             if gold_answer is None:
@@ -104,8 +113,12 @@ def generate_markdown_report(summary: dict[str, Any]) -> str:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run Phase 11 FinQA Evaluation Benchmark")
-    parser.add_argument("--data-file", default="data/processed/normalized/finqa_dev_normalized.jsonl")
+    parser = argparse.ArgumentParser(
+        description="Run Phase 11 FinQA Evaluation Benchmark"
+    )
+    parser.add_argument(
+        "--data-file", default="data/processed/normalized/finqa_dev_normalized.jsonl"
+    )
     parser.add_argument("--output-dir", default="eval_results")
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument(
@@ -144,7 +157,10 @@ def main() -> None:
         if args.save_states:
             # Persist the trajectory the agent actually took for this record
             # so the CI regression gate can replay it deterministically.
-            config = {"configurable": {"thread_id": f"eval_{rec.record_id}"}}
+            # Must use the EVALUATOR's run-scoped thread id — the checkpointer
+            # keeps every historical thread, so a bare eval_{record_id} lookup
+            # would return a stale trajectory from an earlier benchmark run.
+            config = {"configurable": {"thread_id": evaluator.thread_id_for(rec)}}
             try:
                 final_state = agent_runner.get_state(config)
                 state_values = final_state.values if final_state else {}
@@ -214,7 +230,9 @@ def main() -> None:
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(generate_markdown_report(summary))
 
-    print(f"\nBenchmark Complete! Reports written to:\n  - {json_path}\n  - {results_path}\n  - {md_path}")
+    print(
+        f"\nBenchmark Complete! Reports written to:\n  - {json_path}\n  - {results_path}\n  - {md_path}"
+    )
     print(f"Final Acc_exe: {exe_acc:.2%} | Program Acc: {prog_acc:.2%}")
 
 

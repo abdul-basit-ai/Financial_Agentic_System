@@ -15,11 +15,7 @@ from agent.nodes.parallel_nodes import (
     sub_task_worker,
 )
 from agent.nodes.plan_node import plan_node
-from agent.nodes.retrieval_node import (
-    fuse_context_node,
-    retrieve_graph_node,
-    retrieve_vector_node,
-)
+from agent.nodes.retrieval_node import fuse_context_node, retrieve_graph_node, retrieve_vector_node
 from agent.nodes.synthesize_node import synthesize_node
 
 __all__ = [

@@ -52,11 +52,13 @@ def tool_safe_math(expression: str) -> str:
     payload = SafeMathInput(expression=expression)
     result = safe_math_tool(payload)
     if result.success and result.data:
-        return json.dumps({
-            "result": result.data.result,
-            "formatted": result.data.formatted,
-            "expression": result.data.expression,
-        })
+        return json.dumps(
+            {
+                "result": result.data.result,
+                "formatted": result.data.formatted,
+                "expression": result.data.expression,
+            }
+        )
     return json.dumps({"error": result.error})
 
 
@@ -199,7 +201,9 @@ def resource_filing_reference(record_id: str) -> str:
 
 
 @mcp.prompt(name="financial_analysis_plan")
-def prompt_financial_analysis_plan(company: str, target_metric: str, periods: str) -> str:
+def prompt_financial_analysis_plan(
+    company: str, target_metric: str, periods: str
+) -> str:
     """Generates a structured decomposition prompt for comparative financial analysis."""
     return (
         f"You are conducting a formal financial analysis for {company}.\n"

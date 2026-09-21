@@ -9,7 +9,17 @@ from agent.prompts import load_prompt
 NEO4J_SCHEMA_DEFINITION = {
     "nodes": {
         "Company": {"properties": ["id", "name", "ticker", "sector"]},
-        "Report": {"properties": ["id", "year", "quarter", "source_file", "record_id", "question", "split"]},
+        "Report": {
+            "properties": [
+                "id",
+                "year",
+                "quarter",
+                "source_file",
+                "record_id",
+                "question",
+                "split",
+            ]
+        },
         "Table": {"properties": ["id", "title", "page_number"]},
         "Row": {"properties": ["id", "label", "unit", "scale", "category"]},
         "Value": {"properties": ["id", "amount", "normalized_amount", "year"]},
