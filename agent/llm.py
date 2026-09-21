@@ -109,6 +109,16 @@ def _get_model() -> _ModelHandle | None:
         base_url = os.getenv("OPENAI_BASE_URL", "").strip() or _default_base_url()
         if base_url:
             kwargs["base_url"] = base_url
+        # Reasoning models served via OpenRouter (DeepSeek-R family etc.) can
+        # spend the ENTIRE max_tokens budget on invisible reasoning and return
+        # empty content — the planner then always falls back to rules. Disable
+        # reasoning on the OpenRouter path by default; opt back in with
+        # OPENROUTER_DISABLE_REASONING=0.
+        if (
+            base_url == OPENROUTER_BASE_URL
+            and os.getenv("OPENROUTER_DISABLE_REASONING", "1").strip() != "0"
+        ):
+            kwargs["model_kwargs"] = {"reasoning": {"enabled": False}}
         _model_cache = _ModelHandle(model=ChatOpenAI(**kwargs), model_name=model_name)
         return _model_cache
     except Exception as exc:
@@ -159,7 +169,26 @@ def invoke_llm(
         )
         return None
 
-    content = str(getattr(response, "content", "") or "")
+    raw_content = getattr(response, "content", "") or ""
+    if isinstance(raw_content, list):
+        # langchain content blocks: [{'type': 'text', 'text': '...'}, ...] —
+        # some OpenRouter models (reasoning disabled) return arrays, and
+        # str() of that list is unparseable downstream.
+        raw_content = "".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in raw_content
+        )
+    content = str(raw_content)
+    if not content.strip():
+        # Empty completion: with reasoning models this means the token budget
+        # went to reasoning and no content was produced. Surface it — a silent
+        # empty string made the planner fall back to rules invisibly.
+        print(
+            f"[llm] empty completion from {handle.model_name}; "
+            f"falling back to deterministic behavior.",
+            flush=True,
+        )
+        return None
     usage = getattr(response, "usage_metadata", None) or {}
     prompt_tokens = int(usage.get("input_tokens", 0) or 0)
     completion_tokens = int(usage.get("output_tokens", 0) or 0)

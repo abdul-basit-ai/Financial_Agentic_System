@@ -1,7 +1,7 @@
 {
   "split": "dev",
   "total_samples": 25,
-  "execution_accuracy": 0.28,
+  "execution_accuracy": 0.32,
   "results": [
     {
       "record_id": "V/2008/page_17.pdf-1",
@@ -11,7 +11,7 @@
       "program_correct": false,
       "ir_metrics": {
         "recall_at_k": 1.0,
-        "precision_at_k": 0.2,
+        "precision_at_k": 0.4,
         "mrr": 1.0,
         "ndcg_at_k": 1.0,
         "recall_graph": 1.0,
@@ -19,9 +19,9 @@
       },
       "taxonomy": "CORRECT",
       "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
-      "latency_ms": 39413.887,
+      "latency_ms": 27507.807,
       "token_cost_usd": 0.0,
-      "trace_id": "094ba493-8493-4abb-9fd0-7bb1b4ea55f8"
+      "trace_id": "4d81d319-511d-46c1-aff9-7513cf716c44"
     },
     {
       "record_id": "C/2017/page_328.pdf-1",
@@ -39,15 +39,15 @@
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 18409.218,
+      "latency_ms": 10273.102,
       "token_cost_usd": 0.0,
-      "trace_id": "731dbde8-2ae2-43ab-81e0-9f126ac0d8fd"
+      "trace_id": "934fa757-898d-4973-8d49-7c9ff24792d1"
     },
     {
       "record_id": "DVN/2007/page_58.pdf-2",
-      "predicted_answer": 100.0,
+      "predicted_answer": 0.24691358024691357,
       "gold_answer": 24.69136,
-      "execution_correct": false,
+      "execution_correct": true,
       "program_correct": false,
       "ir_metrics": {
         "recall_at_k": 1.0,
@@ -57,11 +57,11 @@
         "recall_graph": 1.0,
         "recall_vector": 0.3333
       },
-      "taxonomy": "PLANNING_ERROR",
-      "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 22032.287,
+      "taxonomy": "CORRECT",
+      "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
+      "latency_ms": 8796.505,
       "token_cost_usd": 0.0,
-      "trace_id": "82adc7a9-f16f-42c2-a382-5efc0f8c04dd"
+      "trace_id": "f13cf7c3-0986-4207-807b-3786a469e2ca"
     },
     {
       "record_id": "ETR/2011/page_341.pdf-3",
@@ -79,9 +79,9 @@
       },
       "taxonomy": "RETRIEVAL_MISS",
       "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 13066.671,
+      "latency_ms": 9036.17,
       "token_cost_usd": 0.0,
-      "trace_id": "6a94edbd-8f3e-4670-890a-ce08c563c2c8"
+      "trace_id": "aaa1f2fa-b30d-43f3-a784-ae1fc9a0a6f1"
     },
     {
       "record_id": "ETR/2004/page_213.pdf-2",
@@ -93,15 +93,15 @@
         "recall_at_k": 1.0,
         "precision_at_k": 0.8,
         "mrr": 1.0,
-        "ndcg_at_k": 1.0,
+        "ndcg_at_k": 0.9469,
         "recall_graph": 0.6667,
         "recall_vector": 0.6667
       },
       "taxonomy": "CORRECT",
       "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
-      "latency_ms": 24030.425,
+      "latency_ms": 9863.985,
       "token_cost_usd": 0.0,
-      "trace_id": "4417be3d-248c-4c65-b400-c7d895fbced2"
+      "trace_id": "e314b382-c83a-4abd-b349-3b6950733acf"
     },
     {
       "record_id": "PM/2017/page_38.pdf-1",
@@ -119,9 +119,9 @@
       },
       "taxonomy": "CORRECT",
       "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
-      "latency_ms": 13884.336,
+      "latency_ms": 8315.61,
       "token_cost_usd": 0.0,
-      "trace_id": "e2622feb-7b8e-4dde-a29f-e6693a35bf02"
+      "trace_id": "c4084580-ba6e-4946-b197-ba2c73db13c5"
     },
     {
       "record_id": "JPM/2008/page_85.pdf-3",
@@ -139,13 +139,13 @@
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 16454.155,
+      "latency_ms": 9503.078,
       "token_cost_usd": 0.0,
-      "trace_id": "c7dbe534-8566-495e-90a7-59db1eb2b387"
+      "trace_id": "4c467a8d-e279-4ed2-8265-eb29327704cb"
     },
     {
       "record_id": "PNC/2013/page_207.pdf-1",
-      "predicted_answer": 100.0,
+      "predicted_answer": 1.0,
       "gold_answer": 30.44323,
       "execution_correct": false,
       "program_correct": false,
@@ -159,13 +159,13 @@
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 10914.613,
+      "latency_ms": 7875.147,
       "token_cost_usd": 0.0,
-      "trace_id": "bc460fe8-8b4b-433d-97fb-c8420245b48b"
+      "trace_id": "64035993-cb4f-40e0-96a3-4f7c58b8ddca"
     },
     {
       "record_id": "CME/2017/page_97.pdf-5",
-      "predicted_answer": 2017.0,
+      "predicted_answer": 0.0,
       "gold_answer": 995.0,
       "execution_correct": false,
       "program_correct": false,
@@ -179,13 +179,13 @@
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 25792.087,
+      "latency_ms": 10087.144,
       "token_cost_usd": 0.0,
-      "trace_id": "6f94e6e4-91be-4945-9fd1-b865f3cddb43"
+      "trace_id": "09188756-de75-4da7-b0ed-2c331244b253"
     },
     {
       "record_id": "PNC/2013/page_62.pdf-2",
-      "predicted_answer": 31.0,
+      "predicted_answer": 0.0,
       "gold_answer": 3576.0,
       "execution_correct": false,
       "program_correct": false,
@@ -199,13 +199,13 @@
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 14284.219,
+      "latency_ms": 8808.63,
       "token_cost_usd": 0.0,
-      "trace_id": "14755c98-cf9f-46bf-864f-a97a4df48df8"
+      "trace_id": "ea38a8cc-4f52-4173-abca-25151bd4e3d5"
     },
     {
       "record_id": "AAPL/2004/page_36.pdf-2",
-      "predicted_answer": 2004.0,
+      "predicted_answer": 551.0,
       "gold_answer": 0.2,
       "execution_correct": false,
       "program_correct": false,
@@ -219,29 +219,29 @@
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 18252.175,
+      "latency_ms": 12520.11,
       "token_cost_usd": 0.0,
-      "trace_id": "1e3ded55-4535-4232-99b1-cebde5acdd3e"
+      "trace_id": "62793f76-f562-4010-a0f6-519bf53a4bd1"
     },
     {
       "record_id": "PKG/2009/page_65.pdf-4",
-      "predicted_answer": 2014.0,
+      "predicted_answer": 0.0333393161626133,
       "gold_answer": 0.56197,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
-        "recall_at_k": 0.0,
-        "precision_at_k": 0.0,
-        "mrr": 0.0,
-        "ndcg_at_k": 0.0,
+        "recall_at_k": 0.5,
+        "precision_at_k": 0.2,
+        "mrr": 1.0,
+        "ndcg_at_k": 0.6131,
         "recall_graph": 1.0,
         "recall_vector": 0.0
       },
       "taxonomy": "RETRIEVAL_MISS",
-      "taxonomy_explanation": "Information deficit: recall@k (0.00) failed to retrieve all gold evidence items.",
-      "latency_ms": 23731.986,
+      "taxonomy_explanation": "Information deficit: recall@k (0.50) failed to retrieve all gold evidence items.",
+      "latency_ms": 11775.763,
       "token_cost_usd": 0.0,
-      "trace_id": "c79c3f0a-fd0a-497f-9f83-e7bf564cbfdf"
+      "trace_id": "01c3505a-0960-4aec-963b-eeca84bb6b26"
     },
     {
       "record_id": "LMT/2013/page_74.pdf-4",
@@ -259,9 +259,9 @@
       },
       "taxonomy": "CORRECT",
       "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
-      "latency_ms": 12369.782,
+      "latency_ms": 13643.582,
       "token_cost_usd": 0.0,
-      "trace_id": "a5fc6f2a-4fd4-4ad6-a32b-274221761af7"
+      "trace_id": "31324282-3d15-4b03-b9e0-8362445212d8"
     },
     {
       "record_id": "STT/2011/page_83.pdf-1",
@@ -279,9 +279,9 @@
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 19083.649,
+      "latency_ms": 9907.644,
       "token_cost_usd": 0.0,
-      "trace_id": "57b92895-d794-4ea3-b48c-24a95a0bf184"
+      "trace_id": "35778d67-0c9c-4b83-8e3f-aec9365e96cc"
     },
     {
       "record_id": "MRO/2007/page_149.pdf-2",
@@ -291,21 +291,21 @@
       "program_correct": false,
       "ir_metrics": {
         "recall_at_k": 1.0,
-        "precision_at_k": 0.4,
-        "mrr": 0.5,
-        "ndcg_at_k": 0.6309,
+        "precision_at_k": 0.8,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0,
         "recall_graph": 1.0,
         "recall_vector": 1.0
       },
       "taxonomy": "CORRECT",
       "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
-      "latency_ms": 21666.745,
+      "latency_ms": 11426.201,
       "token_cost_usd": 0.0,
-      "trace_id": "89be7969-2865-474c-a830-a6a2b194b422"
+      "trace_id": "4923aae3-9cb3-489e-b818-cfde0b05a266"
     },
     {
       "record_id": "AOS/2004/page_11.pdf-2",
-      "predicted_answer": 100.0,
+      "predicted_answer": 1.0,
       "gold_answer": 0.34011,
       "execution_correct": false,
       "program_correct": false,
@@ -319,9 +319,9 @@
       },
       "taxonomy": "RETRIEVAL_MISS",
       "taxonomy_explanation": "Information deficit: recall@k (0.50) failed to retrieve all gold evidence items.",
-      "latency_ms": 20574.128,
+      "latency_ms": 12029.529,
       "token_cost_usd": 0.0,
-      "trace_id": "2a6962c8-ce64-416a-85e5-de75dd7c857a"
+      "trace_id": "5d6bff14-4ebb-46ce-936f-edc5bd0c7b0b"
     },
     {
       "record_id": "C/2010/page_223.pdf-3",
@@ -339,53 +339,53 @@
       },
       "taxonomy": "RETRIEVAL_MISS",
       "taxonomy_explanation": "Information deficit: recall@k (0.50) failed to retrieve all gold evidence items.",
-      "latency_ms": 18056.802,
+      "latency_ms": 12433.485,
       "token_cost_usd": 0.0,
-      "trace_id": "4547ea17-1319-427b-8996-e1f701043474"
+      "trace_id": "1066d7e6-4a7d-4886-a587-84caf5bfde3a"
     },
     {
       "record_id": "MSI/2006/page_61.pdf-3",
-      "predicted_answer": 2011.0,
+      "predicted_answer": 0.14683115626511853,
       "gold_answer": 0.35099,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
         "recall_at_k": 1.0,
-        "precision_at_k": 0.6,
-        "mrr": 0.5,
-        "ndcg_at_k": 0.6309,
+        "precision_at_k": 1.0,
+        "mrr": 1.0,
+        "ndcg_at_k": 1.0,
         "recall_graph": 1.0,
         "recall_vector": 1.0
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 13231.702,
+      "latency_ms": 10635.31,
       "token_cost_usd": 0.0,
-      "trace_id": "8e77a6ad-51bd-4218-8328-6fcc93ba2b73"
+      "trace_id": "6ff792ec-9287-444f-8d69-f1b8dfe08973"
     },
     {
       "record_id": "ABMD/2006/page_75.pdf-1",
-      "predicted_answer": 4819.0,
+      "predicted_answer": 0.0,
       "gold_answer": 0.19495,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
         "recall_at_k": 1.0,
-        "precision_at_k": 0.2,
+        "precision_at_k": 0.4,
         "mrr": 0.5,
-        "ndcg_at_k": 0.3869,
+        "ndcg_at_k": 0.6241,
         "recall_graph": 0.0,
         "recall_vector": 1.0
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 23370.584,
+      "latency_ms": 10668.695,
       "token_cost_usd": 0.0,
-      "trace_id": "de22f83e-f95b-43f8-966a-6e15c5f93bab"
+      "trace_id": "34ff6c5c-7c7e-42eb-96bf-f3d47a2950a0"
     },
     {
       "record_id": "AMAT/2013/page_18.pdf-2",
-      "predicted_answer": 2019.0,
+      "predicted_answer": 580.0,
       "gold_answer": 7.22222,
       "execution_correct": false,
       "program_correct": false,
@@ -399,9 +399,9 @@
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 21780.758,
+      "latency_ms": 14018.36,
       "token_cost_usd": 0.0,
-      "trace_id": "b9481d83-e1f2-4c81-ac32-ab0a31764a02"
+      "trace_id": "34bd195e-1505-4a32-a55d-e0a7abf6dc45"
     },
     {
       "record_id": "DVN/2014/page_85.pdf-1",
@@ -419,9 +419,9 @@
       },
       "taxonomy": "CORRECT",
       "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
-      "latency_ms": 15333.399,
+      "latency_ms": 12229.166,
       "token_cost_usd": 0.0,
-      "trace_id": "5204d12e-74a1-48a6-a3cc-faf29d594fe2"
+      "trace_id": "0e324cb7-1d99-46fe-8b59-606e69c968ac"
     },
     {
       "record_id": "SPGI/2018/page_74.pdf-1",
@@ -439,33 +439,33 @@
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 17934.845,
+      "latency_ms": 11839.498,
       "token_cost_usd": 0.0,
-      "trace_id": "7b1ce05f-9661-4734-9db4-022a0fc771ba"
+      "trace_id": "4ec30f6f-ce4a-45c8-b880-13616a10f655"
     },
     {
       "record_id": "ZBH/2003/page_58.pdf-3",
-      "predicted_answer": 2003.0,
+      "predicted_answer": 1.0,
       "gold_answer": 0.72825,
       "execution_correct": false,
       "program_correct": false,
       "ir_metrics": {
         "recall_at_k": 1.0,
         "precision_at_k": 0.8,
-        "mrr": 1.0,
-        "ndcg_at_k": 1.0,
+        "mrr": 0.5,
+        "ndcg_at_k": 0.6934,
         "recall_graph": 1.0,
         "recall_vector": 0.5
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 17020.145,
+      "latency_ms": 11096.991,
       "token_cost_usd": 0.0,
-      "trace_id": "993f67b5-1150-4aa7-a2ee-9e5649b2dea2"
+      "trace_id": "b4b8f5fe-4cac-4771-b294-71fc8632f875"
     },
     {
       "record_id": "AMT/2005/page_105.pdf-2",
-      "predicted_answer": 2418012.0,
+      "predicted_answer": 2.2,
       "gold_answer": 4575515.0,
       "execution_correct": false,
       "program_correct": false,
@@ -479,9 +479,9 @@
       },
       "taxonomy": "PLANNING_ERROR",
       "taxonomy_explanation": "Planner constructed a mathematically non-isomorphic DSL expression relative to gold program.",
-      "latency_ms": 19638.412,
+      "latency_ms": 9500.238,
       "token_cost_usd": 0.0,
-      "trace_id": "b08794e5-746e-420b-b6fb-d7cdfa3b1027"
+      "trace_id": "1fb8a596-15b2-47b9-a8a4-8cda2e85f52a"
     },
     {
       "record_id": "ETR/2015/page_131.pdf-1",
@@ -499,9 +499,9 @@
       },
       "taxonomy": "CORRECT",
       "taxonomy_explanation": "Output verified within allowable numerical tolerance bounds.",
-      "latency_ms": 12710.591,
+      "latency_ms": 11320.644,
       "token_cost_usd": 0.0,
-      "trace_id": "dd5ff8f1-815e-4170-af03-2afcd5e43ece"
+      "trace_id": "44c2b42c-559f-4330-a3e3-94d01d43ec3c"
     }
   ]
 }
