@@ -142,8 +142,13 @@ def invoke_llm(
     system_prompt: str,
     user_prompt: str,
     max_tokens: int = 1024,
+    temperature: float | None = None,
 ) -> LLMCallResult | None:
     """Runs one completion; returns None when LLM is unconfigured or fails.
+
+    `temperature` overrides the env-configured sampling temperature for THIS
+    call (self-consistency sampling uses ~0.7 for diversity while the env
+    default stays 0 for single-shot paths).
 
     Never raises — callers treat None as "use the deterministic fallback".
     """
@@ -154,7 +159,8 @@ def invoke_llm(
     try:
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        response = handle.model.invoke(
+        model = handle.model.bind(temperature=temperature) if temperature is not None else handle.model
+        response = model.invoke(
             [
                 SystemMessage(content=system_prompt),
                 HumanMessage(content=user_prompt),

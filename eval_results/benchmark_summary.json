@@ -1,17 +1,18 @@
 {
   "split": "dev",
-  "total_samples": 25,
+  "total_samples": 100,
   "execution_accuracy": 0.52,
-  "program_accuracy": 0.4,
-  "mean_recall_at_5": 0.84,
-  "mean_precision_at_5": 0.56,
-  "mean_mrr": 0.79,
-  "mean_ndcg_at_5": 0.7516,
-  "mean_latency_ms": 10720.61,
-  "p95_latency_ms": 20780.55,
+  "program_accuracy": 0.32,
+  "mean_recall_at_5": 0.8942,
+  "mean_precision_at_5": 0.578,
+  "mean_mrr": 0.7645,
+  "mean_ndcg_at_5": 0.762,
+  "mean_latency_ms": 11539.16,
+  "p95_latency_ms": 20605.58,
   "taxonomy_breakdown": {
-    "CORRECT": 14,
-    "PLANNING_ERROR": 9,
-    "RETRIEVAL_MISS": 2
+    "CORRECT": 53,
+    "PLANNING_ERROR": 38,
+    "RETRIEVAL_MISS": 8,
+    "SYNTHESIS_HALLUCINATION": 1
   }
 }

@@ -136,52 +136,89 @@ def _generate_and_execute_program(
 ) -> dict[str, Any] | None:
     """Generates a FinQA program over the full table and executes it.
 
+    Self-consistency: samples the program PROGRAM_SELF_CONSISTENCY_SAMPLES
+    times (default 5) at PROGRAM_SAMPLE_TEMPERATURE (default 0.7), executes
+    every sample, and answers with the MAJORITY numeric result — operand-
+    order and wrong-cell mistakes a single sample makes are outvoted (AAPL's
+    percent change flipped sign in exactly one sample of five).
+
     Returns the terminal synthesis result, or None on any failure (no LLM,
-    unparseable program, unresolvable cells, math error) — callers fall back
+    no sample parseable, unresolvable cells, math error) — callers fall back
     to the evidence-bundle synthesis path.
     """
+    import os
+    from collections import Counter
+
     prompt_text, prompt_version, prompt_hash = load_prompt(_PROGRAM_PROMPT_NAME)
     table_data = table_env.get("data") or {}
     table_md = _render_table_markdown(table_data)
     user_prompt = f"Question: {state.input}\n\nTable:\n{table_md}"
 
-    result = invoke_llm(
-        system_prompt=prompt_text,
-        user_prompt=user_prompt,
-        max_tokens=600,
-    )
-    if result is None:
-        return None
+    try:
+        k_samples = max(1, int(os.getenv("PROGRAM_SELF_CONSISTENCY_SAMPLES", "5")))
+    except ValueError:
+        k_samples = 5
+    try:
+        sample_temperature = float(os.getenv("PROGRAM_SAMPLE_TEMPERATURE", "0.7"))
+    except ValueError:
+        sample_temperature = 0.7
 
     from agent.nodes.plan_node import _extract_json
 
-    parsed = _extract_json(result.content)
-    program = parsed.get("program") if isinstance(parsed, dict) else None
-    log = (
-        f"[ProgramGen {prompt_version} (hash:{prompt_hash}) llm:{result.model}] "
-        f"tokens {result.prompt_tokens}+{result.completion_tokens}."
-    )
-    if not program or not isinstance(program, str):
-        print(f"[synthesize] program generation rejected: no program in {str(parsed)[:120]}", flush=True)
-        return None
-
-    try:
-        resolved = _resolve_cells(program, table_data)
-    except ValueError as exc:
-        print(f"[synthesize] program cell resolution failed: {exc}", flush=True)
-        return None
-
-    math_result = safe_math_tool(SafeMathInput(expression=resolved))
-    if not math_result.success or math_result.data is None:
-        print(
-            f"[synthesize] program execution failed: {math_result.error}; expr={resolved}",
-            flush=True,
+    def _one_sample(sample_idx: int) -> tuple[float, str] | None:
+        """One LLM sample -> resolved program -> executed value, or None."""
+        result = invoke_llm(
+            system_prompt=prompt_text,
+            user_prompt=user_prompt,
+            max_tokens=600,
+            temperature=sample_temperature if k_samples > 1 else None,
         )
+        if result is None:
+            return None
+        parsed = _extract_json(result.content)
+        program = parsed.get("program") if isinstance(parsed, dict) else None
+        if not program or not isinstance(program, str):
+            return None
+        try:
+            resolved = _resolve_cells(program, table_data)
+        except ValueError:
+            return None
+        math_result = safe_math_tool(SafeMathInput(expression=resolved))
+        if not math_result.success or math_result.data is None:
+            return None
+        return float(math_result.data.result), resolved
+
+    if k_samples > 1:
+        from concurrent.futures import ThreadPoolExecutor
+
+        workers = min(k_samples, 4)
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            outcomes = list(pool.map(_one_sample, range(k_samples)))
+    else:
+        outcomes = [_one_sample(0)]
+
+    successful = [s for s in outcomes if s is not None]
+    if not successful:
+        print("[synthesize] program mode: no sample produced a computable program", flush=True)
         return None
 
-    answer_value = math_result.data.result
+    # Majority vote on values rounded to 6 decimals: identical programs
+    # yield bit-identical floats, different-but-equivalent programs may
+    # differ in the last ulp.
+    votes = Counter(round(value, 6) for value, _ in successful)
+    winning_key, winning_count = votes.most_common(1)[0]
+    winner = next(s for s in successful if round(s[0], 6) == winning_key)
+    answer_value, resolved = winner
+
+    log = (
+        f"[ProgramGen {prompt_version} (hash:{prompt_hash}) self-consistency "
+        f"{winning_count}/{k_samples} samples agree; llm outcomes "
+        f"{len(successful)}/{k_samples} computable.]"
+    )
+    print(f"[synthesize] {log} expr={resolved}", flush=True)
+
     final_text = (
-        f"Computed from the filing table: {resolved} = {math_result.data.formatted}\n"
+        f"Computed from the filing table: {resolved} = {answer_value}\n"
         f"Answer: {answer_value}"
     )
     # safe_math-shaped envelope: feeds the evaluator's program-accuracy
@@ -194,7 +231,7 @@ def _generate_and_execute_program(
         "data": {
             "expression": resolved,
             "result": answer_value,
-            "formatted": math_result.data.formatted,
+            "formatted": str(answer_value),
         },
         "error": None,
     }
@@ -204,7 +241,8 @@ def _generate_and_execute_program(
         "tool_results": [program_envelope],
         "scratchpad": [
             log,
-            f"[ProgramGen] Executed '{resolved}' -> {math_result.data.formatted}",
+            f"[ProgramGen] Executed '{resolved}' -> {answer_value} "
+            f"({winning_count}/{k_samples} sample majority)",
         ],
     }
 
