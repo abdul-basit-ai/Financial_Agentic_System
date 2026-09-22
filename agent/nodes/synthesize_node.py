@@ -1,6 +1,13 @@
 """Synthesis node validating evidence completeness and formatting citations.
 
-Two synthesis paths share one evidence gate:
+Three synthesis paths share one evidence gate:
+- Table-conditioned program generation (program_gen_v1): when the anchored
+  filing's FULL table was extracted and no explicit plan math ran, the LLM
+  writes a FinQA-style program over table cells; the cells are resolved
+  deterministically and executed via safe_math. This replaces value-fragment
+  reassembly with the benchmark's native reasoning shape. The program runs
+  against verified filing cells only; note it is computed at synthesis time,
+  downstream of the risk gate's evidence review.
 - LLM synthesizer (synthesizer_v2): analyst-prose answer over the verified
   evidence bundle, with a strict anti-hallucination post-check — every numeral
   in the LLM output must exist in the evidence (or the question). Any
@@ -12,16 +19,195 @@ Two synthesis paths share one evidence gate:
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from agent.llm import extract_numerals, invoke_llm, is_llm_enabled
 from agent.nodes.relevance import question_terms, relevance_hits
 from agent.prompts import load_prompt
 from agent.state.schema import AgentStateV1
+from agent.tools.safe_math import SafeMathInput, safe_math_tool
 
 MAX_GRAPH_ITERATIONS = 3
 
 _SYNTH_PROMPT_NAME = "synthesizer_v2"
+_PROGRAM_PROMPT_NAME = "program_gen_v1"
+
+_CELL_REF_RE = re.compile(r"cell\(\s*[\"']([^\"']+)[\"']\s*,\s*[\"']([^\"']+)[\"']\s*\)")
+
+
+def _norm_label(value: Any) -> str:
+    return " ".join(str(value or "").casefold().split())
+
+
+def _render_table_markdown(table_data: dict[str, Any]) -> str:
+    """Renders the extracted table as markdown for the program generator."""
+    rows = table_data.get("rows") or []
+    headers: list[str] = list(table_data.get("headers") or [])
+    for row in rows:
+        for cell in row.get("cells") or []:
+            header = str(cell.get("column_header") or "")
+            if header and header not in headers:
+                headers.append(header)
+    if not rows:
+        return "(empty table)"
+
+    lines = ["| row label | " + " | ".join(headers) + " |"]
+    lines.append("|" + "---|" * (len(headers) + 1))
+    for row in rows:
+        values: dict[str, str] = {}
+        for cell in row.get("cells") or []:
+            header = str(cell.get("column_header") or "")
+            amount = cell.get("amount")
+            values[header] = "" if amount is None else str(amount)
+        lines.append(
+            "| " + str(row.get("row_label") or "") + " | " + " | ".join(values.get(h, "") for h in headers) + " |"
+        )
+    return "\n".join(lines)
+
+
+def _resolve_cell(table_data: dict[str, Any], row_ref: str, col_ref: str) -> float | None:
+    """Resolves a cell(row, col) reference against the extracted table.
+
+    Matching: exact label (case/whitespace-folded), then containment, then
+    unique term-overlap best. Returns None when the reference is unresolvable
+    or ambiguous — the caller fails the program rather than guessing.
+    """
+    rows = table_data.get("rows") or []
+    row_norm = _norm_label(row_ref)
+    col_norm = _norm_label(col_ref)
+
+    target_rows = [r for r in rows if _norm_label(r.get("row_label")) == row_norm]
+    if not target_rows:
+        target_rows = [
+            r
+            for r in rows
+            if row_norm and (row_norm in _norm_label(r.get("row_label")) or _norm_label(r.get("row_label")) in row_norm)
+        ]
+    if not target_rows:
+        return None
+
+    cells: list[dict[str, Any]] = []
+    for r in target_rows:
+        cells.extend(r.get("cells") or [])
+    cells = [c for c in cells if c.get("amount") is not None]
+
+    for c in cells:
+        if _norm_label(c.get("column_header")) == col_norm:
+            return float(c["amount"])
+    for c in cells:
+        header_norm = _norm_label(c.get("column_header"))
+        if header_norm and (col_norm in header_norm or header_norm in col_norm):
+            return float(c["amount"])
+
+    c_terms = question_terms(f"{row_ref} {col_ref}")
+    if not c_terms:
+        return None
+    best: dict[str, Any] | None = None
+    best_score = 0
+    ambiguous = False
+    for c in cells:
+        score = relevance_hits(
+            f"{c.get('column_header', '')}", c_terms
+        ) + relevance_hits(f"{target_rows[0].get('row_label', '')}", c_terms)
+        if score > best_score:
+            best, best_score, ambiguous = c, score, False
+        elif score == best_score and score > 0:
+            ambiguous = True
+    if best is not None and not ambiguous:
+        return float(best["amount"])
+    return None
+
+
+def _resolve_cells(program: str, table_data: dict[str, Any]) -> str:
+    """Replaces every cell("row", "col") reference with its numeric value."""
+
+    def _substitute(match: re.Match[str]) -> str:
+        value = _resolve_cell(table_data, match.group(1), match.group(2))
+        if value is None:
+            raise ValueError(f"unresolvable cell reference: {match.group(0)}")
+        return repr(value)
+
+    return _CELL_REF_RE.sub(_substitute, program)
+
+
+def _generate_and_execute_program(
+    state: AgentStateV1, table_env: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Generates a FinQA program over the full table and executes it.
+
+    Returns the terminal synthesis result, or None on any failure (no LLM,
+    unparseable program, unresolvable cells, math error) — callers fall back
+    to the evidence-bundle synthesis path.
+    """
+    prompt_text, prompt_version, prompt_hash = load_prompt(_PROGRAM_PROMPT_NAME)
+    table_data = table_env.get("data") or {}
+    table_md = _render_table_markdown(table_data)
+    user_prompt = f"Question: {state.input}\n\nTable:\n{table_md}"
+
+    result = invoke_llm(
+        system_prompt=prompt_text,
+        user_prompt=user_prompt,
+        max_tokens=600,
+    )
+    if result is None:
+        return None
+
+    from agent.nodes.plan_node import _extract_json
+
+    parsed = _extract_json(result.content)
+    program = parsed.get("program") if isinstance(parsed, dict) else None
+    log = (
+        f"[ProgramGen {prompt_version} (hash:{prompt_hash}) llm:{result.model}] "
+        f"tokens {result.prompt_tokens}+{result.completion_tokens}."
+    )
+    if not program or not isinstance(program, str):
+        print(f"[synthesize] program generation rejected: no program in {str(parsed)[:120]}", flush=True)
+        return None
+
+    try:
+        resolved = _resolve_cells(program, table_data)
+    except ValueError as exc:
+        print(f"[synthesize] program cell resolution failed: {exc}", flush=True)
+        return None
+
+    math_result = safe_math_tool(SafeMathInput(expression=resolved))
+    if not math_result.success or math_result.data is None:
+        print(
+            f"[synthesize] program execution failed: {math_result.error}; expr={resolved}",
+            flush=True,
+        )
+        return None
+
+    answer_value = math_result.data.result
+    final_text = (
+        f"Computed from the filing table: {resolved} = {math_result.data.formatted}\n"
+        f"Answer: {answer_value}"
+    )
+    # safe_math-shaped envelope: feeds the evaluator's program-accuracy
+    # metric (expression compared against the gold FinQA DSL) and keeps the
+    # audit trail complete for a computation performed at synthesis time.
+    program_envelope = {
+        "task_id": "task_program",
+        "tool_name": "safe_math",
+        "success": True,
+        "data": {
+            "expression": resolved,
+            "result": answer_value,
+            "formatted": math_result.data.formatted,
+        },
+        "error": None,
+    }
+    return {
+        "final_answer": final_text,
+        "is_terminal": True,
+        "tool_results": [program_envelope],
+        "scratchpad": [
+            log,
+            f"[ProgramGen] Executed '{resolved}' -> {math_result.data.formatted}",
+        ],
+    }
+
 
 
 def _to_float(token: str) -> float | None:
@@ -106,11 +292,20 @@ def synthesize_node(state: AgentStateV1) -> dict[str, Any]:
             return bool(d.get("records"))
         if r.get("tool_name") == "vector_retrieval":
             return bool(d.get("chunks"))
+        if r.get("tool_name") == "table_extract":
+            return bool(d.get("rows"))
         return False
 
     math_results = [r for r in math_results if _has_payload(r)]
     graph_results = [r for r in graph_results if _has_payload(r)]
     vector_results = [r for r in vector_results if _has_payload(r)]
+    table_envs = [
+        r
+        for r in all_results
+        if r.get("tool_name") == "table_extract"
+        and r.get("success")
+        and _has_payload(r)
+    ]
 
     # Relevance RANKING: evidence sharing signal with the question is surfaced
     # first, so citations and template answers draw from the matching rows.
@@ -164,6 +359,18 @@ def synthesize_node(state: AgentStateV1) -> dict[str, Any]:
 
     # Termination check: Sufficient data OR hit iteration limit
     if has_sufficient_evidence:
+        # TABLE-CONDITIONED PROGRAM MODE: full table extracted — generate a
+        # FinQA program over the table and execute it. This takes priority
+        # over planner-scheduled math: the program sees every row/column of
+        # the filing, while compute's fragment picking resolves operands
+        # heuristically (the JPM CET1 ratio computed 0.039 from wrong rows
+        # that way). Falls through to the evidence-bundle synthesis on any
+        # program failure; deterministic mode (no LLM) keeps the old paths.
+        if table_envs and is_llm_enabled():
+            program_outcome = _generate_and_execute_program(state, table_envs[0])
+            if program_outcome is not None:
+                return program_outcome
+
         grounding_corpus, evidence_block = _build_evidence_bundle(
             state, math_results, graph_results, vector_results
         )

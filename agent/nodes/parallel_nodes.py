@@ -16,6 +16,7 @@ from agent.nodes.concurrency import ToolSlot
 from agent.state.schema import AgentStateV1
 from agent.tools.graph_tool import GraphQueryInput, graph_retrieval_tool
 from agent.tools.safe_math import SafeMathInput, safe_math_tool
+from agent.tools.table_tool import TableExtractInput, table_extract_tool
 from agent.tools.vector_tool import VectorSearchInput, vector_retrieval_tool
 
 
@@ -37,7 +38,7 @@ def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
     error_msg: str | None = None
     log_entry = ""
 
-    if target_tool not in {"graph_retrieval", "vector_retrieval", "safe_math"}:
+    if target_tool not in {"graph_retrieval", "vector_retrieval", "safe_math", "table_extract"}:
         error_msg = f"Unsupported tool '{target_tool}' in sub_task_worker"
         log_entry = f"[Parallel Worker: {task_id}] Failed: {error_msg}"
         return {
@@ -128,6 +129,20 @@ def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
             scope_note = " (company-scoped)" if record_ids else ""
             log_entry = f"[Parallel Worker: {task_id}] Vector retrieved {count} chunks{scope_note}.{contention_note}"
 
+        elif target_tool == "table_extract":
+            query_input = TableExtractInput(
+                record_id=tool_payload.get("record_id", "")
+            )
+            res = table_extract_tool(query_input)
+            success = res.success
+            result_data = res.data.model_dump() if res.data else None
+            error_msg = res.error
+            count = res.data.total_values if res.data else 0
+            log_entry = (
+                f"[Parallel Worker: {task_id}] Table extracted "
+                f"{count} values.{contention_note}"
+            )
+
         elif target_tool == "safe_math":
             raw_expr = tool_payload.get("expression", "0")
             res = safe_math_tool(SafeMathInput(expression=raw_expr))
@@ -194,8 +209,12 @@ def fan_out_router(state: AgentStateV1) -> list[Send] | str:
             deps = call.get("dependencies", [])
             # Ready if all dependencies exist in sub_task_results
             if not deps or all(d in state.sub_task_results for d in deps):
-                # Only fan out graph and vector retrieval tasks
-                if call.get("target_tool") in {"graph_retrieval", "vector_retrieval"}:
+                # Only fan out retrieval tasks (math is routed to compute)
+                if call.get("target_tool") in {
+                    "graph_retrieval",
+                    "vector_retrieval",
+                    "table_extract",
+                }:
                     ready_tasks.append(call)
 
     if ready_tasks:

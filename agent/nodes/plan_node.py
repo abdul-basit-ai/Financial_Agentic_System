@@ -200,6 +200,26 @@ def plan_node(state: AgentStateV1) -> dict[str, Any]:
                     "record_id": state.record_id,
                 }
 
+        # Full-table extraction: unconditional on anchored plans. Program
+        # generation at synthesis needs the ENTIRE table (every row x every
+        # column); one small Cypher read, no planner discretion involved.
+        existing_ids = {c.get("task_id") for c in pending_calls}
+        table_task_id = "task_table"
+        n = 1
+        while table_task_id in existing_ids:
+            n += 1
+            table_task_id = f"task_table_{n}"
+        pending_calls.append(
+            {
+                "task_id": table_task_id,
+                "target_tool": "table_extract",
+                "payload": {"record_id": state.record_id},
+                "dependencies": [],
+                "status": "PENDING",
+            }
+        )
+        log_entry = f"{log_entry} + full-table extraction ({table_task_id})."
+
     return {
         "iteration_count": new_iteration,
         "tool_calls": pending_calls,

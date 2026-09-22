@@ -1,0 +1,45 @@
+{
+  "tool_name": "table_extract",
+  "description": "Extracts the complete table of one anchored FinQA filing: every row label crossed with every column header and value. Feeds table-conditioned program generation at synthesis time.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "record_id": {
+        "type": "string",
+        "description": "FinQA record id of the filing to extract, e.g. 'V/2008/page_17.pdf-1'"
+      }
+    },
+    "required": ["record_id"]
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "record_id": {"type": "string"},
+      "headers": {"type": "array", "items": {"type": "string"}},
+      "rows": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "row_index": {"type": "integer"},
+            "row_label": {"type": "string"},
+            "cells": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "column_index": {"type": "integer"},
+                  "column_header": {"type": "string"},
+                  "amount": {"type": ["number", "null"]},
+                  "year": {"type": ["integer", "null"]}
+                }
+              }
+            }
+          }
+        }
+      },
+      "total_rows": {"type": "integer"},
+      "total_values": {"type": "integer"}
+    }
+  }
+}

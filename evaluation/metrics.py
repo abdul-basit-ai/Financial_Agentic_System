@@ -86,6 +86,12 @@ def _canonicalize_ast_node(node: ast.AST) -> Any:
         return ("const", str(val))
 
     if isinstance(node, ast.Name):
+        # FinQA DSL encodes numeric literals as const_N ("divide(637,
+        # const_5)" = divide by 5). Canonicalize them to their literal value
+        # so a resolved-numeric program can match the gold DSL isomorphically.
+        m = re.fullmatch(r"const_(\d+(?:\.\d+)?)", node.id, re.IGNORECASE)
+        if m:
+            return ("const", round(float(m.group(1)), 6))
         return ("name", node.id.lower())
 
     if isinstance(node, ast.Call):
