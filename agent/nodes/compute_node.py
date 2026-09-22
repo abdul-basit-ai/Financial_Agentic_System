@@ -35,8 +35,12 @@ def _pick_numeric_value(
        overlap with the hint's terms). Without this, a multi-operand plan
        ("payment volume" and "transactions") resolves BOTH task_N.amount
        references to the same top-relevance record: divide(x, x) = 1.0.
-    3. Question terms — picks the ROW (the company/line the question is
-       about among same-column values).
+       Row disambiguation among metric-matched candidates ALSO uses the
+       hint's terms: in region-labeled tables ("canada oil and gas" /
+       "total oil and gas") the hint carries the row discriminator, while
+       question terms may name the entity belonging to a DIFFERENT task's
+       operand ("...comes from canada?" pollutes the total-row task).
+    3. Question terms — row scope for hint-less tasks and hint ties.
     4. Question-term best match / first record (previous behavior).
     """
     if not records:
@@ -67,6 +71,17 @@ def _pick_numeric_value(
             top = max(hits)
             if top > 0:
                 candidates = [rec for rec, h in zip(candidates, hits) if h == top]
+                row_hits = [
+                    relevance_hits(str(rec.get("row_label", "")), m_terms)
+                    for rec in candidates
+                ]
+                top_row = max(row_hits)
+                if top_row > 0:
+                    candidates = [
+                        rec for rec, h in zip(candidates, row_hits) if h == top_row
+                    ]
+                if len(candidates) == 1:
+                    return _record_amount(candidates[0])
 
     row_hits = [relevance_hits(str(rec.get("row_label", "")), q_terms) for rec in candidates]
     top_row = max(row_hits)

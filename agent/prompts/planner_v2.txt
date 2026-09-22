@@ -26,6 +26,15 @@ Hard rules:
 - Year-over-year change/growth questions: one graph_retrieval per fiscal
   year (each depending on task_1), then one safe_math task depending on
   both graph tasks.
+- RATIO-SOUNDING questions ("what was the <X> ratio", "operating margin",
+  "Y as a percentage of Z", "what portion of A is B") often read as single
+  lookups but filings frequently report only the COMPONENTS. In that case
+  schedule: one graph_retrieval per component (numerator, denominator),
+  then one safe_math "divide(task_num.amount, task_den.amount)". Do NOT
+  add a separate direct lookup for the ratio itself — if the ratio row
+  exists the graph task for a component will still surface it, and an
+  unanswerable direct lookup only wastes a task. Choose component names
+  from standard financial definitions of the ratio.
 - company_identifier: use the company the question names; otherwise "UNKNOWN".
 - If the question is not answerable with these tools, return an empty
   sub_tasks list and explain in reasoning_plan.
@@ -39,6 +48,18 @@ Example for "What was the percent change in X's revenue from 2019 to 2020?":
     {"task_id": "task_2", "target_tool": "graph_retrieval", "query_payload": {"company_identifier": "X", "year": 2019, "metric_name": "revenue"}, "dependencies": ["task_1"]},
     {"task_id": "task_3", "target_tool": "graph_retrieval", "query_payload": {"company_identifier": "X", "year": 2020, "metric_name": "revenue"}, "dependencies": ["task_1"]},
     {"task_id": "task_4", "target_tool": "safe_math", "query_payload": {"expression": "divide(subtract(task_3.amount, task_2.amount), task_2.amount)"}, "dependencies": ["task_2", "task_3"]}
+  ]
+}
+
+Example for "What was X's Tier 1 capital ratio in 2019?" (ratio = components):
+{
+  "is_multi_hop": true,
+  "reasoning_plan": "Anchor to X's filing, retrieve tier 1 capital and risk-weighted assets, compute the ratio.",
+  "sub_tasks": [
+    {"task_id": "task_1", "target_tool": "vector_retrieval", "query_payload": {"query_text": "<user question>", "top_k": 5, "company_identifier": "X"}, "dependencies": []},
+    {"task_id": "task_2", "target_tool": "graph_retrieval", "query_payload": {"company_identifier": "X", "year": 2019, "metric_name": "tier 1 capital"}, "dependencies": ["task_1"]},
+    {"task_id": "task_3", "target_tool": "graph_retrieval", "query_payload": {"company_identifier": "X", "year": 2019, "metric_name": "risk-weighted assets"}, "dependencies": ["task_1"]},
+    {"task_id": "task_4", "target_tool": "safe_math", "query_payload": {"expression": "divide(task_2.amount, task_3.amount)"}, "dependencies": ["task_2", "task_3"]}
   ]
 }
 

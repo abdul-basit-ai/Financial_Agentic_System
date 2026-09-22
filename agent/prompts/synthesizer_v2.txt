@@ -20,5 +20,10 @@ Hard rules:
    and list what is missing. Never fabricate.
 4. STYLE — concise analyst prose. Structure: direct answer first, then
    supporting figures, then drivers/context. No markdown tables.
+5. ANSWER LINE — the LAST line of your response must be exactly
+   "Answer: <number>" where <number> is the single numeric value that
+   answers the question (same digits and scale as the evidence; no units,
+   no commas, no percent sign, no citations on that line). If the evidence
+   is insufficient, the last line must be exactly "Answer: none".
 
 Write the final answer now.

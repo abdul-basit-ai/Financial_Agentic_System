@@ -362,6 +362,18 @@ def _deterministic_answer(
             for ch in chunks[:2]:
                 parts.append(f"• [{ch.get('section')}] {ch.get('text_content')}")
 
+    # Final answer line — a single parseable number, mirroring the LLM
+    # synthesizer's "Answer:" contract so the evaluator extracts the value
+    # from the marker instead of scanning the whole dump (citation figures
+    # and years otherwise masquerade as the prediction). Only emitted for a
+    # REAL computed result: without math, no single row is "the" answer and
+    # promoting the top row's amount fabricates a figure.
+    if math_results:
+        last = math_results[-1].get("data", {})
+        answer_value = last.get("result")
+        if answer_value is not None:
+            parts.append(f"Answer: {answer_value}")
+
     return "\n".join(parts)
 
 
@@ -385,4 +397,5 @@ def _insufficient_evidence_answer(
         "\nSuggestion: verify the company identifier, fiscal years, or metric "
         "naming and try again."
     )
+    parts.append("Answer: none")
     return "\n".join(parts)
