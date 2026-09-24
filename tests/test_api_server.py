@@ -23,7 +23,6 @@ from agent.server.app import create_app
 @pytest.fixture
 def client() -> TestClient:
     app = create_app()
-    # Use MemorySaver for deterministic isolated testing
     app.state.agent = create_financial_agent(checkpointer=MemorySaver())
     return TestClient(app)
 
@@ -53,21 +52,18 @@ def test_sse_query_stream(client: TestClient) -> None:
         "thread_id": f"sse_test_{uuid.uuid4().hex[:8]}",
     }
 
+    events_received = []
     with client.stream("POST", "/api/v1/query/stream", json=payload) as response:
         assert response.status_code == 200
         assert "text/event-stream" in response.headers["content-type"]
-
-        events_received = []
         for line in response.iter_lines():
             if line.startswith("event: "):
-                events_received.append(line.replace("event: ", "").strip())
+                events_received.append(line.removeprefix("event: ").strip())
 
-        # Verify stream structure
-        assert "lifecycle" in events_received
-        assert "node_update" in events_received
-        assert any(
-            e in {"final_answer", "complete", "interrupt"} for e in events_received
-        )
+    # Verify stream structure
+    assert "lifecycle" in events_received
+    assert "node_update" in events_received
+    assert any(e in {"final_answer", "complete", "interrupt"} for e in events_received)
 
 
 # =====================================================================

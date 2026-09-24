@@ -214,6 +214,15 @@ def test_zero_record_drop(pipeline_paths: dict[str, Path], split: str) -> None:
     if not raw_file.exists():
         pytest.skip(f"Raw split file missing: {raw_file}")
 
+    # data/processed/ is git-ignored (DVC-managed); CI checkouts don't have it.
+    # The zero-drop contract is enforced locally/by the ingestion pipeline;
+    # in an environment without processed artifacts this test cannot run.
+    if not norm_file.exists() or not parsed_file.exists():
+        pytest.skip(
+            f"Processed artifacts missing for '{split}' (data/processed is "
+            f"DVC-managed, not committed). Run ingestion locally to generate."
+        )
+
     report = audit_split(raw_file, parsed_file, norm_file, split)
     report.print_evidence_summary()
 

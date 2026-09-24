@@ -92,6 +92,28 @@ services:
     volumes:
       - ./ui:/app/ui
 
+  # Phase 14 / Phase 16: MCP tool server (stdio + SSE transports)
+  mcp:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.mcp
+    container_name: financial-agent-mcp
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - NEO4J_URI=bolt://neo4j:7687
+      - POSTGRES_HOST=pgvector
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - neo4j
+      - pgvector
+
+  # Phase 9 / Phase 16: sandbox execution image. NOT a long-running service:
+  # the host runner (agent.sandbox.runner.DockerSandboxRunner) starts a
+  # container-per-execution from this image with --network none. Build it:
+  #   docker build -f docker/Dockerfile.sandbox -t finagent-sandbox:latest .
+
 volumes:
   neo4j_data:
   neo4j_logs:

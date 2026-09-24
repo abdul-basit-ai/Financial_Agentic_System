@@ -77,6 +77,7 @@ class VectorStoreLoader:
             "dbname": dbname,
             "user": user,
             "password": password,
+            "connect_timeout": 3,
         }
         self.model = SentenceTransformer(model_name)
         self._conn = None

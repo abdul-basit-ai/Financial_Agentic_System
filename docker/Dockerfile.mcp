@@ -1,0 +1,23 @@
+# MCP server image (Phase 10 / Phase 16)
+# Exposes the 7 financial tools over the Model Context Protocol (stdio/SSE).
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir --prefix=/install .
+
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY --from=builder /install /usr/local
+COPY agent/ ./agent/
+COPY ingestion/ ./ingestion/
+COPY knowledge/ ./knowledge/
+
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8001
+
+# SSE transport for containerized serving (HTTP health-checkable);
+# stdio transport remains available via `python -m agent.mcp.server`.
+CMD ["python", "-m", "agent.mcp.server", "--transport", "sse", "--port", "8001"]

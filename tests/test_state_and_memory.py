@@ -85,6 +85,9 @@ def test_exponential_recency_decay() -> None:
 
 
 def test_procedural_archetype_matching() -> None:
+    if os.getenv("FINAGENT_INTEGRATION_TESTS", "").strip() != "1":
+        pytest.skip("Requires real SentenceTransformer model (offline test mode)")
+
     bank = ProceduralMemoryBank()
 
     # Query matching YoY comparison archetype

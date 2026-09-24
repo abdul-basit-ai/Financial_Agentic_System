@@ -38,7 +38,12 @@ def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
     error_msg: str | None = None
     log_entry = ""
 
-    if target_tool not in {"graph_retrieval", "vector_retrieval", "safe_math", "table_extract"}:
+    if target_tool not in {
+        "graph_retrieval",
+        "vector_retrieval",
+        "safe_math",
+        "table_extract",
+    }:
         error_msg = f"Unsupported tool '{target_tool}' in sub_task_worker"
         log_entry = f"[Parallel Worker: {task_id}] Failed: {error_msg}"
         return {
@@ -111,10 +116,23 @@ def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
             company = tool_payload.get("company_identifier")
             record_id = tool_payload.get("record_id")
             record_ids = None
-            if not record_id and company:
+            company_is_real = company and str(company).strip().upper() not in {
+                "UNKNOWN",
+                "N/A",
+                "",
+            }
+            if not record_id and company_is_real:
                 from agent.tools.graph_tool import list_company_record_ids
 
-                record_ids = list_company_record_ids(company) or None
+                # CRITICAL: keep an empty list as-is. `or None` would turn
+                # 'company has zero filings in the corpus' into an UNSCOPED
+                # search, leaking unrelated companies' chunks into synthesis
+                # (observed: AMZN question answered with MSI filing text).
+                # Empty list = correctly empty result.
+                ids = list_company_record_ids(company)
+                record_ids = ids if ids is not None else None
+                if ids is not None and len(ids) == 0:
+                    record_ids = []
             query_input = VectorSearchInput(
                 query_text=tool_payload.get("query_text", ""),
                 top_k=tool_payload.get("top_k", 5),
@@ -130,9 +148,7 @@ def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
             log_entry = f"[Parallel Worker: {task_id}] Vector retrieved {count} chunks{scope_note}.{contention_note}"
 
         elif target_tool == "table_extract":
-            query_input = TableExtractInput(
-                record_id=tool_payload.get("record_id", "")
-            )
+            query_input = TableExtractInput(record_id=tool_payload.get("record_id", ""))
             res = table_extract_tool(query_input)
             success = res.success
             result_data = res.data.model_dump() if res.data else None

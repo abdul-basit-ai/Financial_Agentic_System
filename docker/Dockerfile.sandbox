@@ -1,0 +1,30 @@
+# Sandbox execution service (Phase 9 / Phase 16)
+# Hardened container-per-execution environment for untrusted generated code.
+# Minimal base, non-root user, no network egress at runtime (compose sets
+# network_mode: none / NetworkPolicy denies egress).
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+COPY pyproject.toml ./
+RUN pip install --no-cache-dir --prefix=/install numpy pandas scipy
+
+FROM python:3.11-slim
+
+WORKDIR /sandbox
+
+# No host agent code inside the sandbox image: the guest only receives
+# user_script.py + input_data.json mounted per execution (read-only).
+RUN useradd --create-home --shell /usr/sbin/nologin guest
+
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+USER guest
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# Entrypoint executes the runner wrapper; the host runner invokes:
+#   docker run --rm --network none --memory ... finagent-sandbox:latest \
+#     python runner_wrapper.py
+CMD ["python", "runner_wrapper.py"]

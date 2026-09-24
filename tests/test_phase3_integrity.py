@@ -139,8 +139,11 @@ def test_neo4j_batch_load_and_integrity() -> None:
     loader = GraphLoader(uri=uri, user=user, password=password)
     try:
         loader.connect()
+        # Verify connection is actually alive (driver() is lazy)
+        loader._driver.verify_connectivity()
     except Exception as exc:
         pytest.skip(f"Neo4j container not available: {exc}")
+        return
 
     loader.create_schema()
 
@@ -180,6 +183,26 @@ def test_neo4j_batch_load_and_integrity() -> None:
     assert integrity["orphans_rows_without_table"] == 0
     assert integrity["orphans_tables_without_report"] == 0
 
+    # Teardown: remove the fixture rows so the shared local graph is never
+    # polluted with test data between runs (they would otherwise surface as
+    # "verified evidence" in live benchmark/UI queries).
+    try:
+        with loader._driver.session(database="neo4j") as session:
+            session.run(
+                "MATCH (r:Report) WHERE r.record_id IN ['test_id_1','test_id_2'] DETACH DELETE r"
+            ).consume()
+            session.run(
+                "MATCH (rw:Row) WHERE rw.id CONTAINS 'test_id' DETACH DELETE rw"
+            ).consume()
+            session.run(
+                "MATCH (v:Value) WHERE v.id CONTAINS 'test_id' DETACH DELETE v"
+            ).consume()
+            session.run(
+                "MATCH (c:Company) WHERE c.id = 'company::amzn' AND NOT EXISTS { (c)-[:FILED]->(:Report) } DETACH DELETE c"
+            ).consume()
+    except Exception:
+        pass  # teardown is best-effort; assert results are already checked
+
     loader.close()
 
 
@@ -198,6 +221,7 @@ def test_pgvector_load_and_search() -> None:
         v_loader.connect()
     except Exception as exc:
         pytest.skip(f"Postgres container not available: {exc}")
+        return
 
     v_loader.create_schema()
 

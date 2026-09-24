@@ -73,6 +73,7 @@ class PersistentMerkleAuditLedger(MerkleAuditLedger):
             "dbname": dbname or os.getenv("POSTGRES_DB", "financial_agent"),
             "user": user or os.getenv("POSTGRES_USER", "postgres"),
             "password": password or os.getenv("POSTGRES_PASSWORD", "password"),
+            "connect_timeout": 3,
         }
         self._conn: Any = None
         self._db_available = False

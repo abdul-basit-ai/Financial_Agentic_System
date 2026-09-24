@@ -1,8 +1,23 @@
+# API gateway image (Phase 14+).
+#
+# Torch/sentence-transformers are intentionally NOT installed here: the vector
+# tool lazy-imports SentenceTransformer, and embedding deps now live in the
+# `embeddings` extra in pyproject.toml. The base image is ~1.5GB instead of
+# ~6GB — the full-ML build repeatedly OOM-crashed Docker Desktop on 8GB-RAM
+# machines. CI builds this same image.
+#
+# For a self-contained deploy with embeddings baked in:
+#   docker build --build-arg WITH_ML=1 -f docker/Dockerfile.api -t financial-agent-api:ml .
 FROM python:3.11-slim AS builder
 
 WORKDIR /build
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir --prefix=/install .
+ARG WITH_ML=0
+RUN if [ "$WITH_ML" = "1" ]; then \
+        pip install --no-cache-dir --prefix=/install ".[embeddings]"; \
+    else \
+        pip install --no-cache-dir --prefix=/install .; \
+    fi
 
 FROM python:3.11-slim
 

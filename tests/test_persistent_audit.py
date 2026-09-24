@@ -10,6 +10,8 @@ Verifies:
 
 from __future__ import annotations
 
+import os
+
 import pytest
 
 from agent.guardrails.audit import MerkleAuditLedger
@@ -174,6 +176,9 @@ def test_degraded_mode_is_memory_only_and_loud(clean_table, capsys) -> None:
 
 def test_hitl_nodes_use_persistent_ledger() -> None:
     """The graph's AUDIT_LEDGER must be the persistent implementation."""
+    if os.getenv("FINAGENT_INTEGRATION_TESTS", "").strip() != "1":
+        pytest.skip("Persistent ledger requires Postgres (offline test mode)")
+
     from agent.nodes.hitl_nodes import AUDIT_LEDGER
 
     assert isinstance(AUDIT_LEDGER, PersistentMerkleAuditLedger)

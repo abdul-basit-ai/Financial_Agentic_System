@@ -133,16 +133,17 @@ class FinancialRiskEngine:
                 if target_val is not None:
                     extracted_numbers.append(float(target_val))
 
-                # Benford pool: distinct (row, amount, normalized) observations
-                # only — dedupe exact duplicates and never feed amount AND
-                # normalized_amount for the same record (same figure, counted
-                # twice, fabricates non-Benford distributions).
-                for candidate in (amt, norm_amt):
-                    if candidate is not None:
-                        key = (r.get("row_label"), round(float(candidate), 6))
-                        if key not in seen_observations:
-                            seen_observations.add(key)
-                            benford_pool.append(float(candidate))
+                # Benford pool: RAW amounts, one distinct observation per
+                # (row_label, value). normalized_amount is the same figure at a
+                # different scale — it preserves the leading digit, so feeding
+                # both doubles every digit count and biases the distribution.
+                # Duplicate rows (same row+value retrieved twice) are also the
+                # same observation and must not inflate the pool.
+                if amt is not None:
+                    key = (r.get("row_label"), round(float(amt), 6))
+                    if key not in seen_observations:
+                        seen_observations.add(key)
+                        benford_pool.append(float(amt))
 
                 # Check Extreme Margins (> 100% or < -100%). Fires only with
                 # percent CONTEXT: '%' in the row label or column header. A
@@ -249,13 +250,23 @@ class FinancialRiskEngine:
                     )
 
         # 3. Benford's Law Data Integrity Check (distinct observations only)
+        # Statistical caveat: Benford is fragile on small, topically-clustered
+        # samples — a single query's evidence pool (often 20-40 values heavy in
+        # one topic, e.g. many 2-prefixed years/figures) routinely exceeds
+        # chi2=20 without any corruption. Fire only on a meaningful sample
+        # AND a gross violation (2x critical); downgrade to MEDIUM so it
+        # requires corroboration rather than single-handedly pausing runs.
         benford_ok, chi_sq = verify_benford_law_conformity(benford_pool)
-        if not benford_ok:
+        if (
+            not benford_ok
+            and len(benford_pool) >= 30
+            and chi_sq > 2 * CHI_SQUARE_CRITICAL_99
+        ):
             reasons.append(
                 RiskTriggerReason(
                     category="INTEGRITY",
-                    severity="CRITICAL",
-                    message=f"Data failed Benford's law conformity (Chi-Square: {chi_sq} > {CHI_SQUARE_CRITICAL_99}). Potential OCR/Table parsing corruption.",
+                    severity="MEDIUM",
+                    message=f"Benford's law deviation on {len(benford_pool)} values (Chi-Square: {chi_sq:.1f} > 2x critical {2 * CHI_SQUARE_CRITICAL_99:.0f}) — possible OCR/parsing corruption; requires corroboration.",
                     metric_value=chi_sq,
                 )
             )

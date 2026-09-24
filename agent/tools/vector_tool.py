@@ -30,6 +30,11 @@ class VectorSearchInput(BaseModel):
         description="Filter search to a set of document records (e.g. all filings of one company) — "
         "used by record anchoring so the top chunk identifies the right filing.",
     )
+    company_identifier: str | None = Field(
+        default=None,
+        description="Scope search to one company's filings (record_id prefix, e.g. 'AMZN/'). "
+        "Prevents cross-company narrative pollution when the planner names a company.",
+    )
     split: str | None = Field(
         default=None,
         description="Filter search by dataset split ('train', 'dev', 'test')",
@@ -98,9 +103,20 @@ class VectorRetrievalTool:
         record_id: str | None = None,
         record_ids: list[str] | None = None,
         split: str | None = None,
+        company_identifier: str | None = None,
     ) -> VectorSearchOutput:
         conn = self._get_connection()
         query_emb = self.model.encode(query_text, normalize_embeddings=True).tolist()
+
+        # Company scoping: record_ids carry the company as their path prefix
+        # (e.g. 'AMZN/2020/page_12.pdf-1'). Without this filter, chunks from
+        # unrelated filings dominate top-k and pollute synthesis.
+        company_prefix = (
+            f"{company_identifier.strip().upper()}/%"
+            if company_identifier
+            and company_identifier.strip().upper() not in {"UNKNOWN", "N/A", ""}
+            else None
+        )
 
         sql = """
         SELECT
@@ -113,6 +129,7 @@ class VectorRetrievalTool:
         FROM document_chunks
         WHERE (%(record_id)s IS NULL OR record_id = %(record_id)s)
           AND (%(record_ids)s IS NULL OR record_id = ANY(%(record_ids)s))
+          AND (%(company_prefix)s IS NULL OR record_id ILIKE %(company_prefix)s)
           AND (%(split)s IS NULL OR split = %(split)s)
         ORDER BY embedding <=> %(embedding)s::vector
         LIMIT %(limit)s;
@@ -123,6 +140,7 @@ class VectorRetrievalTool:
             "embedding": str(query_emb),
             "record_id": record_id,
             "record_ids": record_ids,
+            "company_prefix": company_prefix,
             "split": split,
             "limit": top_k,
         }
@@ -169,5 +187,6 @@ def vector_retrieval_tool(
         top_k=payload.top_k,
         record_id=payload.record_id,
         record_ids=payload.record_ids,
+        company_identifier=payload.company_identifier,
         split=payload.split,
     )
