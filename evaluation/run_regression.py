@@ -53,6 +53,22 @@ def main() -> int:
     from evaluation.evaluator import FinQAEvaluator
     from evaluation.runner import load_finqa_records
 
+    data_path = Path(args.data_file)
+    if not data_path.exists():
+        # data/processed is DVC-managed and not committed; a CI checkout has
+        # recorded states but no raw records. The gate must never run live in
+        # CI, so a missing corpus is a loud SKIP, not a crash.
+        print(
+            f"::notice::Normalized records file not found: {args.data_file} "
+            f"(data/processed is DVC-managed, absent in CI checkouts) — "
+            f"skipping regression gate."
+        )
+        print(
+            "::notice::Generate locally with: python ingestion/normalizer.py, "
+            "then python evaluation/runner.py --limit 25"
+        )
+        return 0
+
     records = load_finqa_records(args.data_file, limit=args.limit)
     if not records:
         print(f"FAIL: no evaluation records loaded from {args.data_file}")
