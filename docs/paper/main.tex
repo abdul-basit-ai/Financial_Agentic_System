@@ -74,34 +74,36 @@ The system is organized in five layers (Fig.~\ref{fig:arch}):
 
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[node distance=0.45cm]
-  % Interface
+\resizebox{\columnwidth}{!}{%
+\begin{tikzpicture}[node distance=0.5cm]
+  % Row 1: interface
   \node[data] (ui) {Streamlit UI :8501};
-  \node[data, right=0.7cm of ui] (api) {FastAPI :8000\\(CORS, rate limit)};
-  % Orchestration
-  \node[proc, below=0.55cm of api, xshift=-1.3cm] (orch) {LangGraph StateGraph\\(AgentState)};
-  % Retrieval
-  \node[store, below left=0.55cm and 0.1cm of orch] (qdr) {Qdrant\\vectors};
-  \node[store, right=0.5cm of qdr] (neo) {Neo4j\\graph};
-  \node[proc, right=0.5cm of neo] (rrf) {RRF Fusion\\$k{=}60$};
-  % Reasoning
-  \node[data, below=0.55cm of orch, xshift=1.6cm] (llm) {OpenRouter LLM\\(tool-calling)};
-  \node[proc, right=0.6cm of llm] (val) {Validator--\\Corrector};
-  % Persistence
-  \node[store, below=0.7cm of qdr] (sql) {SQLite\\audit ledger};
+  \node[data, right=0.8cm of ui] (api) {FastAPI :8000 (CORS)};
+  % Row 2: orchestration (single wide node)
+  \node[proc, below=0.6cm of $(ui)!0.5!(api)$, minimum width=6.4cm] (orch)
+       {LangGraph StateGraph (typed AgentState)};
+  % Row 3: stores + fusion
+  \node[store, below left=0.6cm and -1.0cm of orch.south] (qdr) {Qdrant vectors};
+  \node[store, below=0.6cm of orch] (neo) {Neo4j graph};
+  \node[store, below right=0.6cm and -1.0cm of orch.south] (rrf) {RRF fusion};
+  % Row 4: reasoning
+  \node[data, below=0.65cm of $(qdr)!0.5!(neo)$] (llm) {OpenRouter LLM (tools)};
+  \node[proc, right=0.7cm of llm] (val) {Validator--Corrector};
+  % Row 5: persistence
+  \node[store, below=0.65cm of $(llm)!0.5!(val)$] (sql) {SQLite audit ledger};
   % Edges
-  \draw[arr] (ui) -- (orch);
-  \draw[arr] (api) -- (orch);
-  \draw[arr] (orch) -- (qdr);
-  \draw[arr] (orch) -- (neo);
-  \draw[arr] (qdr) -- (rrf);
-  \draw[arr] (neo) -- (rrf);
-  \draw[arr] (rrf) -- (llm);
+  \draw[arr] (ui.south) -- (orch);
+  \draw[arr] (api.south) -- (orch);
+  \draw[arr] (orch.south) -- (qdr.north);
+  \draw[arr] (orch.south) -- (neo.north);
+  \draw[arr] (orch.south) -- (rrf.north);
+  \draw[arr] (rrf.south) -- (llm);
   \draw[arr] (llm) -- (val);
   \draw[arr] (val) -- (llm);
-  \draw[arr] (orch) -- (sql);
-  \draw[arr] (val.south) to[out=-90,in=-90] (sql.east);
-\end{tikzpicture}
+  \draw[arr] (llm.south) -- (sql);
+  \draw[arr] (val.south) -- (sql);
+\end{tikzpicture}%
+}
 \caption{Layered system architecture. Solid arrows denote data flow; the bidirectional LLM--validator edge implements the correction loop.}
 \label{fig:arch}
 \end{figure}
@@ -138,19 +140,23 @@ Fig.~\ref{fig:ingest} shows the offline path. Raw documents (filings, transcript
 
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[node distance=0.4cm]
-  \node[data] (raw) {Raw docs\\(filings, news)};
-  \node[proc, right=0.45cm of raw] (norm) {Normalize\\+ chunk};
-  \node[proc, right=0.45cm of norm] (emb) {Embed\\(bge-small)};
-  \node[store, right=0.45cm of emb] (qv) {Qdrant\\upsert};
-  \node[proc, below=0.6cm of norm] (er) {Entity\\resolution};
-  \node[store, right=0.45cm of er] (ng) {Neo4j\\materialize};
+\resizebox{0.95\columnwidth}{!}{%
+\begin{tikzpicture}[node distance=0.45cm]
+  % Row 1 (main stream)
+  \node[data] (raw) {Raw docs};
+  \node[proc, right=0.5cm of raw] (norm) {Normalize + chunk};
+  \node[proc, right=0.5cm of norm] (emb) {Embed};
+  \node[store, right=0.5cm of emb] (qv) {Qdrant};
+  % Row 2 (graph branch)
+  \node[proc, below=0.7cm of norm] (er) {Entity resolution};
+  \node[store, right=0.5cm of er] (ng) {Neo4j};
   \draw[arr] (raw) -- (norm);
   \draw[arr] (norm) -- (emb);
   \draw[arr] (emb) -- (qv);
   \draw[arr] (norm) -- (er);
   \draw[arr] (er) -- (ng);
-\end{tikzpicture}
+\end{tikzpicture}%
+}
 \caption{Offline ingestion: one normalized stream feeds both the vector store and the entity-resolved graph.}
 \label{fig:ingest}
 \end{figure}
@@ -160,25 +166,30 @@ Fig.~\ref{fig:query} shows the query-time flow from gateway to audited answer. R
 
 \begin{figure}[t]
 \centering
-\begin{tikzpicture}[node distance=0.35cm]
-  \node[data] (q) {Query $q$};
-  \node[proc, right=0.4cm of q] (plan) {Plan};
-  \node[proc, right=0.4cm of plan] (hyb) {Hybrid\\retrieve};
-  \node[proc, right=0.4cm of hyb] (reason) {Reason\\(tools)};
-  \node[ctrl, below=0.55cm of reason] (pass) {Valid?};
-  \node[proc, below=0.55cm of plan, xshift=0.9cm] (corr) {Correct};
-  \node[data, right=0.4cm of reason] (ans) {Answer\\+ cites};
-  \node[store, below=0.55cm of q] (led) {Audit ledger};
+\resizebox{0.95\columnwidth}{!}{%
+\begin{tikzpicture}[node distance=0.45cm]
+  % Row 1 (main stream)
+  \node[data] (q) {Query};
+  \node[proc, right=0.5cm of q] (plan) {Plan};
+  \node[proc, right=0.5cm of plan] (hyb) {Hybrid retrieve};
+  \node[proc, right=0.5cm of hyb] (reason) {Reason (tools)};
+  \node[data, right=0.5cm of reason] (ans) {Answer + cites};
+  % Row 2 (validation loop)
+  \node[ctrl, below=0.7cm of hyb] (pass) {Valid?};
+  \node[proc, below=0.7cm of reason] (corr) {Correct};
+  % Row 3 (persistence)
+  \node[store, below=0.7cm of ans] (led) {Audit ledger};
   \draw[arr] (q) -- (plan);
   \draw[arr] (plan) -- (hyb);
   \draw[arr] (hyb) -- (reason);
   \draw[arr] (reason) -- (ans);
-  \draw[arr] (reason) -- (pass);
-  \draw[arr] (pass) -- node[lab, left]{no} (corr);
-  \draw[arr] (corr) to[out=90,in=90] (hyb.north);
-  \draw[arr] (pass) -- node[lab, below]{yes} (ans);
-  \draw[arr] (ans.south) to[out=-90,in=0] (led.east);
-\end{tikzpicture}
+  \draw[arr] (reason.south) -- (corr.west |- reason.south);
+  \draw[arr] (corr) -- (pass);
+  \draw[arr] (pass.west) to[out=180,in=180] node[lab, left]{no} (hyb.west);
+  \draw[arr] (corr.east) to[out=0,in=0] node[lab, right]{yes} (ans.south east);
+  \draw[arr] (ans.south) -- (led);
+\end{tikzpicture}%
+}
 \caption{Online query pipeline with validator--corrector loop. Failing validation re-enters retrieval with hints; every attempt is logged.}
 \label{fig:query}
 \end{figure}
