@@ -75,36 +75,42 @@ The system is organized in five layers (Fig.~\ref{fig:arch}):
 \begin{figure}[t]
 \centering
 \resizebox{\columnwidth}{!}{%
-\begin{tikzpicture}[node distance=0.5cm]
-  % Row 1: interface
-  \node[data] (ui) {Streamlit UI :8501};
-  \node[data, right=0.8cm of ui] (api) {FastAPI :8000 (CORS)};
-  % Row 2: orchestration (single wide node)
-  \node[proc, below=0.6cm of $(ui)!0.5!(api)$, minimum width=6.4cm] (orch)
-       {LangGraph StateGraph (typed AgentState)};
-  % Row 3: stores + fusion
-  \node[store, below left=0.6cm and -1.0cm of orch.south] (qdr) {Qdrant vectors};
-  \node[store, below=0.6cm of orch] (neo) {Neo4j graph};
-  \node[store, below right=0.6cm and -1.0cm of orch.south] (rrf) {RRF fusion};
-  % Row 4: reasoning
-  \node[data, below=0.65cm of $(qdr)!0.5!(neo)$] (llm) {OpenRouter LLM (tools)};
-  \node[proc, right=0.7cm of llm] (val) {Validator--Corrector};
-  % Row 5: persistence
-  \node[store, below=0.65cm of $(llm)!0.5!(val)$] (sql) {SQLite audit ledger};
-  % Edges
-  \draw[arr] (ui.south) -- (orch);
-  \draw[arr] (api.south) -- (orch);
-  \draw[arr] (orch.south) -- (qdr.north);
-  \draw[arr] (orch.south) -- (neo.north);
-  \draw[arr] (orch.south) -- (rrf.north);
-  \draw[arr] (rrf.south) -- (llm);
-  \draw[arr] (llm) -- (val);
-  \draw[arr] (val) -- (llm);
-  \draw[arr] (llm.south) -- (sql);
-  \draw[arr] (val.south) -- (sql);
+\begin{tikzpicture}[x=1cm, y=1cm, every node/.style={inner sep=2pt}]
+  % ---------- explicit grid layout (no relative placement) ----------
+  % Row 1 (y=5): interface
+  \node[data] (ui)  at (1.4, 5)  {Streamlit UI};
+  \node[data] (api) at (5.6, 5)  {FastAPI :8000};
+  % Row 2 (y=3.6): orchestration
+  \node[proc, minimum width=6.8cm] (orch) at (3.5, 3.6) {LangGraph StateGraph (AgentState)};
+  % Row 3 (y=2.2): stores + fusion, evenly spaced
+  \node[store] (qdr) at (1.0, 2.2) {Qdrant};
+  \node[store] (neo) at (3.5, 2.2) {Neo4j};
+  \node[store] (rrf) at (6.0, 2.2) {RRF fusion};
+  % Row 4 (y=0.8): reasoning
+  \node[data] (llm) at (2.2, 0.8) {OpenRouter LLM};
+  \node[proc] (val) at (5.2, 0.8) {Validator};
+  % Row 5 (y=-0.8): persistence
+  \node[store, minimum width=5.0cm] (sql) at (3.5, -0.8) {SQLite audit ledger};
+  % ---------- edges (vertical layer flows only) ----------
+  \draw[arr] (ui.south)  -- (orch.north -| ui.south);
+  \draw[arr] (api.south) -- (orch.north -| api.south);
+  \draw[arr] (orch.south -| qdr.north) -- (qdr.north);
+  \draw[arr] (orch.south -| neo.north) -- (neo.north);
+  \draw[arr] (orch.south -| rrf.north) -- (rrf.north);
+  \draw[arr] (rrf.south) -- (val.north -| rrf.south);
+  % forward and feedback arrows as offset parallel paths (no overlap)
+  \draw[arr] ([yshift=2.5pt]llm.east) -- ([yshift=2.5pt]val.west);
+  \draw[arr] ([yshift=-2.5pt]val.west) -- ([yshift=-2.5pt]llm.east);
+  \draw[arr] (llm.south) -- (sql.north -| llm.south);
+  \draw[arr] (val.south) -- (sql.north -| val.south);
+  % layer guides
+  \draw[gray!40, dashed] (-0.4,4.5) -- (7.4,4.5)  node[pos=0, lab, above right]{interface};
+  \draw[gray!40, dashed] (-0.4,2.9) -- (7.4,2.9)  node[pos=0, lab, above right]{orchestration};
+  \draw[gray!40, dashed] (-0.4,1.5) -- (7.4,1.5)  node[pos=0, lab, above right]{retrieval};
+  \draw[gray!40, dashed] (-0.4,0.1) -- (7.4,0.1)  node[pos=0, lab, above right]{reasoning};
 \end{tikzpicture}%
 }
-\caption{Layered system architecture. Solid arrows denote data flow; the bidirectional LLM--validator edge implements the correction loop.}
+\caption{Layered system architecture. Dashed guides mark layers; the parallel forward/feedback arrows between the LLM and validator implement the correction loop.}
 \label{fig:arch}
 \end{figure}
 
@@ -183,10 +189,10 @@ Fig.~\ref{fig:query} shows the query-time flow from gateway to audited answer. R
   \draw[arr] (plan) -- (hyb);
   \draw[arr] (hyb) -- (reason);
   \draw[arr] (reason) -- (ans);
-  \draw[arr] (reason.south) -- (corr.west |- reason.south);
-  \draw[arr] (corr) -- (pass);
-  \draw[arr] (pass.west) to[out=180,in=180] node[lab, left]{no} (hyb.west);
-  \draw[arr] (corr.east) to[out=0,in=0] node[lab, right]{yes} (ans.south east);
+  % validation loop: reason drops to row 2, flows right through corr, verdict back to hyb
+  \draw[arr] (reason.south) |- (corr.west);
+  \draw[arr] (pass.west) to[out=180,in=270] node[lab, left]{no} (hyb.south);
+  \draw[arr] (corr.east) to[out=0,in=270] node[lab, right]{yes} (ans.south);
   \draw[arr] (ans.south) -- (led);
 \end{tikzpicture}%
 }
