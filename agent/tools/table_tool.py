@@ -17,7 +17,10 @@ from agent.tools.base import ToolResult
 
 
 class TableExtractInput(BaseModel):
-    record_id: str = Field(..., description="FinQA record id of the filing to extract, e.g. 'V/2008/page_17.pdf-1'")
+    record_id: str = Field(
+        ...,
+        description="FinQA record id of the filing to extract, e.g. 'V/2008/page_17.pdf-1'",
+    )
 
 
 class TableCell(BaseModel):
@@ -51,10 +54,14 @@ class TableExtractionTool:
         password: str | None = None,
         database: str = "neo4j",
     ) -> None:
-        self.uri: str = uri if uri is not None else os.getenv("NEO4J_URI", "bolt://localhost:7687")
+        self.uri: str = (
+            uri if uri is not None else os.getenv("NEO4J_URI", "bolt://localhost:7687")
+        )
         self.user: str = user if user is not None else os.getenv("NEO4J_USER", "neo4j")
         self.password: str = (
-            password if password is not None else os.getenv("NEO4J_PASSWORD", "password")
+            password
+            if password is not None
+            else os.getenv("NEO4J_PASSWORD", "password")
         )
         self.database = database
         self._driver: Any = None
@@ -63,7 +70,9 @@ class TableExtractionTool:
         if self._driver is None:
             from neo4j import GraphDatabase
 
-            self._driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+            self._driver = GraphDatabase.driver(
+                self.uri, auth=(self.user, self.password)
+            )
         return self._driver
 
     def close(self) -> None:
@@ -97,7 +106,9 @@ class TableExtractionTool:
                     continue
                 if current is None or current.row_index != ridx:
                     current = TableRow(
-                        row_index=ridx, row_label=str(record["row_label"] or ""), cells=[]
+                        row_index=ridx,
+                        row_label=str(record["row_label"] or ""),
+                        cells=[],
                     )
                     rows.append(current)
                 if record["col_index"] is not None:

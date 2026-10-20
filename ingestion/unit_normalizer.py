@@ -40,7 +40,7 @@ def normalize_value(value: float | None, unit_label: str) -> float | None:
 
 def normalize_with_context(
     value: float | None, *context_texts: Any
-) -> dict[str, float | None]:
+) -> dict[str, str | float | None]:
     unit = detect_unit_label(*context_texts)
     return {
         "unit_label": unit,

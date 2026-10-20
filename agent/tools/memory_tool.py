@@ -58,6 +58,7 @@ class MemoryRetrievalTool:
                 top_k=top_k,
             )
         except Exception as exc:
+            self.episodic_store.rollback()
             # Degrade gracefully to zero episodic context, but surface the reason
             # (Phase 12 tracing needs this; silent swallowing hides config errors).
             print(

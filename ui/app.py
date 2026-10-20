@@ -10,23 +10,16 @@ from __future__ import annotations
 import html
 import json
 import os
-import sys
 import uuid
-from pathlib import Path
+from typing import Any
 
 import requests
 import streamlit as st
 
-# Streamlit runs this file as a standalone script with /app as CWD and ui/ as
-# the script's own directory (not a package root), so `from ui.sse_client`
-# fails with ModuleNotFoundError. Add the script's directory to sys.path and
-# import the sibling module directly — works both via `streamlit run ui/app.py`
-# from repo root and inside the container.
-_UI_DIR = Path(__file__).resolve().parent
-if str(_UI_DIR) not in sys.path:
-    sys.path.insert(0, str(_UI_DIR))
-
-from sse_client import stream_sse_query  # noqa: E402
+try:
+    from ui.sse_client import stream_sse_query
+except ModuleNotFoundError:  # Streamlit may execute ui/app.py as a bare script.
+    from sse_client import stream_sse_query  # type: ignore[import-not-found,no-redef]
 
 # ---------------------------------------------------------------------------
 # Page setup
@@ -40,87 +33,91 @@ st.set_page_config(
 
 CSS = """
 :root {
-  --ink: #FFFFFF;
-  --panel: #F7F8FA;
-  --panel-2: #EEF1F5;
-  --line: #D8DDE5;
-  --text: #1A2230;
-  --text-dim: #5A6578;
-  --gold: #8A6D1D;
-  --teal: #1E7B5C;
-  --amber: #9A6A15;
-  --rose: #B03050;
+  --canvas: #F3F6FA;
+  --surface: #FFFFFF;
+  --surface-soft: #F7F9FC;
+  --line: #DCE3EC;
+  --text: #12233F;
+  --text-dim: #66758C;
+  --navy: #0B1F3A;
+  --blue: #2563EB;
+  --teal: #0F8A72;
+  --amber: #B86E00;
+  --rose: #C43D58;
+  --shadow: 0 16px 44px rgba(25, 45, 78, 0.08);
 }
 
-html, body, .stApp { background-color: var(--ink) !important; }
+html, body, .stApp { background-color: var(--canvas) !important; }
 .stApp, .stApp p, .stApp span, .stApp li {
-  font-family: 'Times New Roman', Times, serif !important;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
   color: var(--text);
 }
 
 h1, h2, h3, h4, .app-header-title, .qcard-label, .kpi-number {
-  font-family: 'Times New Roman', Times, serif !important;
-  letter-spacing: 0.005em;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  letter-spacing: -0.02em;
   color: var(--text) !important;
 }
 
-.block-container { padding-top: 1.5rem; padding-bottom: 3rem; max-width: 1280px; }
+.block-container { padding-top: 1.25rem; padding-bottom: 3rem; max-width: 1240px; }
 
-[data-testid="stHeader"] { background: var(--ink) !important; border-bottom: 1px solid var(--line); }
+[data-testid="stHeader"] { background: rgba(243, 246, 250, 0.82) !important; backdrop-filter: blur(14px); }
 
-[data-testid="stSidebar"] { background-color: var(--panel) !important; border-right: 1px solid var(--line); }
-[data-testid="stSidebar"] * { color: var(--text) !important; }
+[data-testid="stSidebar"] { background: linear-gradient(180deg, #0B1F3A 0%, #102B4E 100%) !important; border-right: 0; }
+[data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] p, [data-testid="stSidebar"] label { color: #F7FAFF !important; }
+[data-testid="stSidebar"] input { background: rgba(255,255,255,0.1) !important; color: #FFFFFF !important; border-color: rgba(255,255,255,0.22) !important; }
 
-.side-rule { border: none; border-top: 1px solid var(--line); margin: 0.75rem 0 1rem 0; }
+.side-rule { border: none; border-top: 1px solid rgba(255,255,255,0.16); margin: 0.9rem 0 1rem; }
 
 .cap-chip-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
 .cap-chip {
-  font-size: 0.72rem; padding: 0.3rem 0.6rem; border: 1px solid var(--line);
-  border-radius: 999px; background: var(--panel-2); color: var(--text-dim);
+  font-size: 0.7rem; padding: 0.32rem 0.6rem; border: 1px solid rgba(255,255,255,0.16);
+  border-radius: 999px; background: rgba(255,255,255,0.08); color: #DDE8F7 !important;
 }
 
 .app-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 1rem 1.25rem; margin-bottom: 1.25rem;
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: 10px;
+  gap: 1.5rem; padding: 1.4rem 1.55rem; margin-bottom: 1.35rem;
+  background: linear-gradient(120deg, #0B1F3A 0%, #153E67 68%, #0F766E 130%);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; box-shadow: var(--shadow);
 }
 .app-header-brand { display: flex; align-items: center; gap: 0.75rem; }
-.app-header-mark { font-size: 1.6rem; }
-.app-header-title { font-size: 1.25rem; font-weight: 600; line-height: 1.2; }
-.app-header-sub { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.15rem; }
+.app-header-mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 12px; background: rgba(255,255,255,0.12); font-size: 1.3rem; }
+.app-header-title { font-size: 1.28rem; font-weight: 720; line-height: 1.2; color: #FFFFFF !important; }
+.app-header-sub { font-size: 0.82rem; color: #C9D7E9 !important; margin-top: 0.2rem; max-width: 720px; }
 .app-header-status {
   display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem;
-  padding: 0.35rem 0.75rem; border-radius: 999px; border: 1px solid var(--line);
-  background: var(--panel-2); white-space: nowrap;
+  padding: 0.42rem 0.72rem; border-radius: 999px; border: 1px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.1); white-space: nowrap; color: #FFFFFF !important;
 }
 .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--rose); animation: pulse 2s ease-in-out infinite; }
-.status-teal .status-dot { background: var(--teal); }
-.status-rose .status-dot { background: var(--rose); }
+.status-teal .status-dot { background: #39D7B5; }
+.status-rose .status-dot { background: #FF718B; }
 @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
 .session-meta { font-size: 0.82rem; color: var(--text-dim); margin: 0.25rem 0 0.75rem 0; }
-.session-meta code { background: var(--panel-2); padding: 0.1rem 0.4rem; border-radius: 4px; color: var(--gold); }
+.session-meta code { background: #E8EEF8; padding: 0.12rem 0.42rem; border-radius: 5px; color: var(--blue); }
 
-.qcard-label { font-weight: 600; font-size: 0.95rem; margin-bottom: 0.15rem; }
+.qcard-label { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.2rem; }
 
 .badge {
   display: inline-block; font-size: 0.72rem; padding: 0.2rem 0.55rem; border-radius: 999px;
-  border: 1px solid transparent; margin: 0.1rem 0.3rem 0.1rem 0; font-family: 'Times New Roman', Times, serif;
+  border: 1px solid transparent; margin: 0.1rem 0.3rem 0.1rem 0;
 }
-.badge-rose  { background: rgba(226,89,107,0.12); color: var(--rose);  border-color: rgba(226,89,107,0.35); }
-.badge-amber { background: rgba(227,168,59,0.12); color: var(--amber); border-color: rgba(227,168,59,0.35); }
-.badge-teal  { background: rgba(70,184,146,0.12); color: var(--teal);  border-color: rgba(70,184,146,0.35); }
-.badge-gold  { background: rgba(201,162,39,0.12); color: var(--gold);  border-color: rgba(201,162,39,0.35); }
+.badge-rose  { background: #FDECF0; color: var(--rose); border-color: #F7C8D2; }
+.badge-amber { background: #FFF4DE; color: var(--amber); border-color: #F4D79D; }
+.badge-teal  { background: #E6F7F3; color: var(--teal); border-color: #B8E5DA; }
+.badge-gold  { background: #EAF0FF; color: var(--blue); border-color: #C9D8FF; }
 .badge-row { margin: 0.35rem 0 0.75rem 0; }
 
 .kpi { padding: 0.25rem 0 0.5rem 0; }
-.kpi-number { font-size: 2.6rem; font-weight: 700; color: var(--gold); line-height: 1; }
+.kpi-number { font-size: 2.6rem; font-weight: 760; color: var(--blue) !important; line-height: 1; }
 .kpi-label { font-size: 0.8rem; color: var(--text-dim); margin-top: 0.2rem; }
 
 .tl-item { display: flex; align-items: flex-start; gap: 0.6rem; padding: 0.4rem 0 0.4rem 0.75rem; border-left: 2px solid var(--line); margin-left: 0.2rem; }
 .tl-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 0.35rem; flex-shrink: 0; background: var(--text-dim); }
-.tl-plan .tl-dot { background: var(--gold); }
+.tl-plan .tl-dot { background: var(--blue); }
 .tl-node .tl-dot { background: var(--teal); }
 .tl-interrupt .tl-dot { background: var(--amber); }
 .tl-error .tl-dot { background: var(--rose); }
@@ -128,36 +125,43 @@ h1, h2, h3, h4, .app-header-title, .qcard-label, .kpi-number {
 .tl-label { font-weight: 600; color: var(--text); }
 .tl-text { color: var(--text-dim); }
 
-[data-testid="stVerticalBlockBorderWrapper"] { background: var(--panel) !important; border: 1px solid var(--line) !important; border-radius: 10px !important; }
-[data-testid="stForm"] { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 1.25rem; }
-[data-testid="stExpander"] { background: var(--panel); border: 1px solid var(--line) !important; border-radius: 10px; }
+[data-testid="stVerticalBlockBorderWrapper"] { background: var(--surface) !important; border: 1px solid var(--line) !important; border-radius: 14px !important; box-shadow: 0 8px 24px rgba(31, 50, 81, 0.045); }
+[data-testid="stForm"] { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 1.25rem; box-shadow: var(--shadow); }
+[data-testid="stExpander"] { background: var(--surface); border: 1px solid var(--line) !important; border-radius: 12px; }
 
 .stTabs [data-baseweb="tab-list"] { gap: 1.5rem; border-bottom: 1px solid var(--line); }
-.stTabs [data-baseweb="tab"] { font-family: 'Times New Roman', Times, serif; color: var(--text-dim); font-size: 0.95rem; padding-bottom: 0.6rem; }
-.stTabs [aria-selected="true"] { color: var(--gold) !important; border-bottom: 2px solid var(--gold) !important; }
+.stTabs [data-baseweb="tab"] { color: var(--text-dim); font-size: 0.92rem; font-weight: 600; padding-bottom: 0.65rem; }
+.stTabs [aria-selected="true"] { color: var(--blue) !important; border-bottom: 2px solid var(--blue) !important; }
 
 .stButton > button {
-  border-radius: 6px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
-  font-family: 'Times New Roman', Times, serif; transition: transform 0.12s ease, border-color 0.12s ease;
+  border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--text);
+  font-weight: 620; transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
 }
-.stButton > button:hover { border-color: var(--gold); transform: translateY(-1px); }
-.stButton > button[kind="primary"] { background: var(--gold); color: var(--ink); border: none; font-weight: 600; }
-.stButton > button[kind="primary"]:hover { background: #DDB749; }
+.stButton > button:hover { border-color: #9EB7E4; transform: translateY(-1px); box-shadow: 0 7px 18px rgba(30, 73, 145, 0.1); }
+.stButton > button[kind="primary"] { background: var(--blue); color: #FFFFFF; border: none; font-weight: 680; }
+.stButton > button[kind="primary"]:hover { background: #1D4ED8; }
 
 .stTextInput input, .stTextArea textarea {
-  background: var(--panel-2) !important; color: var(--text) !important; border: 1px solid var(--line) !important;
-  border-radius: 6px !important; font-family: 'Times New Roman', Times, serif !important;
+  background: var(--surface-soft) !important; color: var(--text) !important; border: 1px solid var(--line) !important;
+  border-radius: 9px !important;
 }
+.stTextInput input:focus, .stTextArea textarea:focus { border-color: #8BADF0 !important; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1) !important; }
 
 div[role="radiogroup"] { gap: 0.5rem; }
-div[role="radiogroup"] label { border: 1px solid var(--line); padding: 0.3rem 0.85rem; border-radius: 6px; background: var(--panel-2); }
+div[role="radiogroup"] label { border: 1px solid var(--line); padding: 0.3rem 0.85rem; border-radius: 8px; background: var(--surface-soft); }
 
-[data-testid="stAlert"] { background: var(--panel-2) !important; border: 1px solid var(--line) !important; border-radius: 8px !important; }
-[data-testid="stCodeBlock"] pre { background: var(--ink) !important; border: 1px solid var(--line) !important; border-radius: 6px !important; }
+[data-testid="stAlert"] { border: 1px solid var(--line) !important; border-radius: 10px !important; }
+[data-testid="stCodeBlock"] pre { background: #0F1F35 !important; border: 1px solid #203752 !important; border-radius: 8px !important; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: var(--ink); }
+::-webkit-scrollbar-track { background: var(--canvas); }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 5px; }
+
+@media (max-width: 760px) {
+  .block-container { padding-left: 1rem; padding-right: 1rem; }
+  .app-header { align-items: flex-start; flex-direction: column; }
+  .app-header-status { align-self: flex-start; }
+}
 """
 
 st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
@@ -185,6 +189,25 @@ def _backend_is_live(url: str) -> bool:
         return r.status_code < 500
     except Exception:
         return False
+
+
+_DEFAULT_QUERY = (
+    "What is the percent change in annual long-term debt maturities "
+    "from 2016 to 2017?"
+)
+
+if "query_input" not in st.session_state:
+    st.session_state.query_input = _DEFAULT_QUERY
+if "company_input" not in st.session_state:
+    st.session_state.company_input = "ETR"
+if "last_analysis" not in st.session_state:
+    st.session_state.last_analysis = None
+
+
+def _select_example(query: str, company: str) -> None:
+    """Load an example into the form without relying on widget defaults."""
+    st.session_state.query_input = query
+    st.session_state.company_input = company
 
 
 # ---------------------------------------------------------------------------
@@ -252,9 +275,6 @@ with tab_analyst:
         "Ask questions across 10-K tables, MD&A commentary, and numerical calculations."
     )
 
-    preset_query = ""
-    preset_company = "ETR"
-
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -266,11 +286,13 @@ with tab_analyst:
             st.caption(
                 "Entergy (ETR): percent change in annual long-term debt maturities, 2016 to 2017"
             )
-            if st.button(
-                "Run this query", key="preset_etr_debt", use_container_width=True
-            ):
-                preset_query = "What is the percent change in annual long-term debt maturities from 2016 to 2017?"
-                preset_company = "ETR"
+            st.button(
+                "Use example",
+                key="preset_etr_debt",
+                use_container_width=True,
+                on_click=_select_example,
+                args=(_DEFAULT_QUERY, "ETR"),
+            )
 
     with col2:
         with st.container(border=True):
@@ -281,11 +303,16 @@ with tab_analyst:
             st.caption(
                 "Entergy (ETR): share of the 2007-2008 net revenue change due to rider revenue"
             )
-            if st.button(
-                "Run this query", key="preset_etr_rider", use_container_width=True
-            ):
-                preset_query = "What percent of the change between net revenue in 2007 and 2008 was due to rider revenue?"
-                preset_company = "ETR"
+            st.button(
+                "Use example",
+                key="preset_etr_rider",
+                use_container_width=True,
+                on_click=_select_example,
+                args=(
+                    "What percent of the change between net revenue in 2007 and 2008 was due to rider revenue?",
+                    "ETR",
+                ),
+            )
 
     with col3:
         with st.container(border=True):
@@ -297,42 +324,45 @@ with tab_analyst:
                 "Amazon is not in this FinQA sample — the agent must report "
                 "insufficient evidence instead of fabricating figures."
             )
-            if st.button(
-                "Run this query", key="preset_outlier", use_container_width=True
-            ):
-                preset_query = "Verify the 145% operating margin and goodwill impairment for acquisition."
-                preset_company = "AMZN"
+            st.button(
+                "Use example",
+                key="preset_outlier",
+                use_container_width=True,
+                on_click=_select_example,
+                args=(
+                    "Verify the 145% operating margin and goodwill impairment for acquisition.",
+                    "AMZN",
+                ),
+            )
 
     # Query Input Form
     with st.form("query_form", clear_on_submit=False):
         c1, c2 = st.columns([4, 1])
         user_query = c1.text_area(
             "Natural language financial query",
-            value=preset_query
-            or "What is the percent change in annual long-term debt maturities from 2016 to 2017?",
             height=85,
+            key="query_input",
         )
-        company_id = c2.text_input("Ticker / ID", value=preset_company)
+        company_id = c2.text_input("Ticker / ID", key="company_input")
         submitted = st.form_submit_button(
             "Run analysis", use_container_width=True, type="primary"
         )
 
+    if submitted and not user_query.strip():
+        st.warning("Enter a financial question before running the analysis.")
+
     if submitted and user_query.strip():
         thread_id = f"ui_thread_{uuid.uuid4().hex[:8]}"
-        st.markdown(
-            f'<div class="session-meta">Session thread <code>{html.escape(thread_id)}</code> '
-            f"for <strong>{html.escape(company_id)}</strong></div>",
-            unsafe_allow_html=True,
-        )
 
         with st.container(border=True):
             st.markdown("#### Reasoning trace")
 
-            timeline_logs = []
-            final_answer_text = None
+            timeline_logs: list[dict[str, str]] = []
+            final_answer_text: str | None = None
             is_paused_for_hitl = False
+            run_error: str | None = None
 
-            payload = {
+            payload: dict[str, Any] = {
                 "query": user_query,
                 "company_identifier": company_id,
                 "thread_id": thread_id,
@@ -347,6 +377,13 @@ with tab_analyst:
                         data = event_envelope.get("data", {})
 
                         if event_type == "lifecycle":
+                            timeline_logs.append(
+                                {
+                                    "kind": "plan",
+                                    "label": "Planner",
+                                    "text": "Decomposed the question into an execution graph.",
+                                }
+                            )
                             status_box.update(label="Planning execution strategy…")
                             st.markdown(
                                 timeline_item(
@@ -358,8 +395,15 @@ with tab_analyst:
                             )
 
                         elif event_type == "node_update":
-                            node_name = data.get("node", "unknown")
-                            latest_log = data.get("latest_log", "")
+                            node_name = str(data.get("node", "unknown"))
+                            latest_log = str(data.get("latest_log", ""))
+                            timeline_logs.append(
+                                {
+                                    "kind": "node",
+                                    "label": node_name,
+                                    "text": latest_log or "Step completed.",
+                                }
+                            )
                             status_box.update(label=f"Executing node: {node_name}")
                             st.markdown(
                                 timeline_item(
@@ -370,6 +414,13 @@ with tab_analyst:
 
                         elif event_type == "interrupt":
                             is_paused_for_hitl = True
+                            timeline_logs.append(
+                                {
+                                    "kind": "interrupt",
+                                    "label": "Compliance hold",
+                                    "text": "Analysis paused for human review.",
+                                }
+                            )
                             status_box.update(
                                 label="Paused for compliance review", state="error"
                             )
@@ -384,7 +435,8 @@ with tab_analyst:
                             )
 
                         elif event_type == "final_answer":
-                            final_answer_text = data.get("final_answer")
+                            answer = data.get("final_answer")
+                            final_answer_text = str(answer) if answer else None
 
                         elif event_type == "complete":
                             if not is_paused_for_hitl:
@@ -393,6 +445,7 @@ with tab_analyst:
                                 )
 
                         elif event_type == "error":
+                            run_error = str(data.get("message", "Execution failed."))
                             status_box.update(
                                 label="Execution error encountered", state="error"
                             )
@@ -406,6 +459,7 @@ with tab_analyst:
                             )
 
                 except Exception as ex:
+                    run_error = str(ex)
                     status_box.update(
                         label="Failed to connect to backend", state="error"
                     )
@@ -414,11 +468,47 @@ with tab_analyst:
                         unsafe_allow_html=True,
                     )
 
-        # Render Final Synthesized Answer
-        if final_answer_text:
+        st.session_state.last_analysis = {
+            "thread_id": thread_id,
+            "company": company_id,
+            "query": user_query,
+            "final_answer": final_answer_text,
+            "paused": is_paused_for_hitl,
+            "error": run_error,
+            "timeline": timeline_logs,
+        }
+
+    last_analysis = st.session_state.last_analysis
+    if isinstance(last_analysis, dict):
+        st.markdown(
+            f'<div class="session-meta">Latest session <code>{html.escape(str(last_analysis.get("thread_id", "unknown")))}</code> '
+            f'for <strong>{html.escape(str(last_analysis.get("company") or "N/A"))}</strong></div>',
+            unsafe_allow_html=True,
+        )
+        if last_analysis.get("final_answer"):
             with st.container(border=True):
                 st.markdown("#### Synthesized analysis")
-                st.markdown(final_answer_text)
+                st.markdown(str(last_analysis["final_answer"]))
+        elif last_analysis.get("paused"):
+            st.info(
+                "This analysis is paused for human review. Open the Compliance inbox to continue it."
+            )
+        elif last_analysis.get("error"):
+            st.error(f"The latest analysis failed: {last_analysis['error']}")
+
+        prior_timeline = last_analysis.get("timeline")
+        if not submitted and isinstance(prior_timeline, list) and prior_timeline:
+            with st.expander("Latest execution trace"):
+                for entry in prior_timeline:
+                    if isinstance(entry, dict):
+                        st.markdown(
+                            timeline_item(
+                                str(entry.get("kind", "node")),
+                                str(entry.get("label", "Step")),
+                                str(entry.get("text", "")),
+                            ),
+                            unsafe_allow_html=True,
+                        )
 
 
 # =====================================================================
@@ -436,8 +526,13 @@ with tab_compliance:
         resp = requests.get(approvals_endpoint, timeout=5.0)
         resp.raise_for_status()
         approvals_data = resp.json()
-        pending_items = approvals_data.get("items", [])
-        fetch_error = None
+        raw_items = approvals_data.get("items", [])
+        pending_items: list[dict[str, Any]] = (
+            [item for item in raw_items if isinstance(item, dict)]
+            if isinstance(raw_items, list)
+            else []
+        )
+        fetch_error: str | None = None
     except Exception as ex:
         pending_items = []
         fetch_error = str(ex)
@@ -519,7 +614,8 @@ with tab_compliance:
                         key=f"fb_{item['thread_id']}",
                     )
 
-                    override_payload: dict = {}
+                    override_payload: dict[str, Any] = {}
+                    override_is_valid = True
                     if decision_action == "OVERRIDE":
                         # OVERRIDE maps to the graph's EDIT verb, which only
                         # consumes overrides.tool_calls (the replacement queue
@@ -551,18 +647,21 @@ with tab_compliance:
                         except ValueError as ve:
                             st.error(f"Invalid override structure: {ve}")
                             override_payload = {}
+                            override_is_valid = False
                         except Exception:
                             st.error("Invalid JSON format in override field.")
                             override_payload = {}
+                            override_is_valid = False
 
                     if st.button(
                         f"Submit {decision_action.title()}",
                         key=f"btn_{item['thread_id']}",
                         type="primary",
                         use_container_width=True,
+                        disabled=not override_is_valid,
                     ):
                         resume_url = f"{api_base_url.rstrip('/')}/api/v1/threads/{item['thread_id']}/resume"
-                        post_data = {
+                        post_data: dict[str, Any] = {
                             "action": decision_action,
                             "analyst_id": analyst_name,
                             "feedback": feedback_notes,

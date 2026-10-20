@@ -99,6 +99,7 @@ class EpisodicMemoryStore:
 
         self.model = SentenceTransformer(model_name)
         self._conn = None
+        self._schema_ready = False
 
     def _get_connection(self) -> Any:
         if self._conn is None or self._conn.closed:
@@ -109,12 +110,27 @@ class EpisodicMemoryStore:
         if self._conn is not None and not self._conn.closed:
             self._conn.close()
             self._conn = None
+        self._schema_ready = False
+
+    def rollback(self) -> None:
+        """Reset a failed transaction so the cached connection remains usable."""
+        if self._conn is not None and not self._conn.closed:
+            self._conn.rollback()
 
     def init_schema(self) -> None:
         conn = self._get_connection()
-        with conn.cursor() as cur:
-            cur.execute(EPISODIC_SCHEMA_DDL)
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(EPISODIC_SCHEMA_DDL)
+            conn.commit()
+            self._schema_ready = True
+        except Exception:
+            conn.rollback()
+            raise
+
+    def _ensure_schema(self) -> None:
+        if not self._schema_ready:
+            self.init_schema()
 
     def ensure_vector_index(self, min_rows: int = 1000, lists: int = 50) -> bool:
         """Creates the ivfflat index once the table is large enough to populate it.
@@ -123,6 +139,7 @@ class EpisodicMemoryStore:
         Below min_rows the index would silently return zero results, so exact
         sequential scan is used instead (correct, just slower at small scale).
         """
+        self._ensure_schema()
         conn = self._get_connection()
         with conn.cursor() as cur:
             cur.execute("SELECT count(*) FROM episodic_memories")
@@ -142,6 +159,7 @@ class EpisodicMemoryStore:
             return True
 
     def save_episode(self, entry: EpisodicEntry) -> int:
+        self._ensure_schema()
         conn = self._get_connection()
         embedding = self.model.encode(
             f"{entry.query_text} {entry.summary}", normalize_embeddings=True
@@ -184,6 +202,7 @@ class EpisodicMemoryStore:
         w_imp: float = 0.2,
         half_life_days: float = DEFAULT_HALF_LIFE_DAYS,
     ) -> list[EpisodicRetrievalResult]:
+        self._ensure_schema()
         conn = self._get_connection()
         query_emb = self.model.encode(query, normalize_embeddings=True).tolist()
 

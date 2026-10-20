@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
 from datetime import UTC, datetime
@@ -27,6 +28,8 @@ from agent.server.schemas import (
 )
 from agent.server.streaming import stream_agent_events
 from agent.state.schema import AgentStateV1
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["Financial Reasoning Agent"])
 
@@ -357,10 +360,11 @@ async def resume_thread_endpoint(
             "final_answer": resumed_output.get("final_answer"),
             "is_terminal": resumed_output.get("is_terminal", False),
         }
-    except Exception as exc:
+    except Exception:
+        logger.exception("Failed to resume thread %s", thread_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to resume thread: {str(exc)}",
+            detail="Failed to resume the thread. Use the response trace ID for support.",
         )
 
 

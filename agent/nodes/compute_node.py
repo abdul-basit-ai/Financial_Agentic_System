@@ -64,7 +64,8 @@ def _pick_numeric_value(
         if m_terms:
             hits = [
                 relevance_hits(
-                    f"{rec.get('row_label', '')} {rec.get('column_header', '')}", m_terms
+                    f"{rec.get('row_label', '')} {rec.get('column_header', '')}",
+                    m_terms,
                 )
                 for rec in candidates
             ]
@@ -83,7 +84,9 @@ def _pick_numeric_value(
                 if len(candidates) == 1:
                     return _record_amount(candidates[0])
 
-    row_hits = [relevance_hits(str(rec.get("row_label", "")), q_terms) for rec in candidates]
+    row_hits = [
+        relevance_hits(str(rec.get("row_label", "")), q_terms) for rec in candidates
+    ]
     top_row = max(row_hits)
     if top_row > 0:
         candidates = [rec for rec, h in zip(candidates, row_hits) if h == top_row]
@@ -116,7 +119,9 @@ def _resolve_dynamic_expression(
     # Build lookup map: task_id -> numeric amount
     lookup: dict[str, float] = {}
 
-    def _value_from(data: Any, task_year: int | None, metric_hint: str | None) -> float | None:
+    def _value_from(
+        data: Any, task_year: int | None, metric_hint: str | None
+    ) -> float | None:
         if not isinstance(data, dict):
             return None
         records = data.get("records", [])
@@ -134,7 +139,9 @@ def _resolve_dynamic_expression(
     if sub_task_results:
         for t_id, envelope in sub_task_results.items():
             value = (
-                _value_from(envelope.get("data"), task_years.get(t_id), task_metrics.get(t_id))
+                _value_from(
+                    envelope.get("data"), task_years.get(t_id), task_metrics.get(t_id)
+                )
                 if isinstance(envelope, dict)
                 else None
             )

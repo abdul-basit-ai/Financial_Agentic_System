@@ -11,7 +11,10 @@ import os
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from neo4j import Driver
 
 from ingestion.entity_extractor import extract_company_identifier
 
@@ -261,7 +264,7 @@ class GraphLoader:
         self, uri: str, user: str, password: str, database: str = "neo4j"
     ) -> None:
         self.database = database
-        self._driver = None
+        self._driver: Driver | None = None
         self._uri = uri
         self._user = user
         self._password = password

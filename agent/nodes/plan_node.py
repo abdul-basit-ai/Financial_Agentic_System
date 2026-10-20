@@ -83,8 +83,10 @@ def _validate_llm_plan(plan: LLMPlan) -> list[str]:
     return problems
 
 
-def _plan_with_llm(state: AgentStateV1) -> tuple[list[dict[str, Any]], str] | None:
-    """Attempts LLM decomposition. Returns (pending_calls, log) or None."""
+def _plan_with_llm(
+    state: AgentStateV1,
+) -> tuple[list[dict[str, Any]], str, dict[str, Any]] | None:
+    """Attempts LLM decomposition. Returns (pending_calls, log, usage)."""
     if not is_llm_enabled():
         return None
 
@@ -142,7 +144,14 @@ def _plan_with_llm(state: AgentStateV1) -> tuple[list[dict[str, Any]], str] | No
         f"LLM tokens: {result.prompt_tokens}+{result.completion_tokens}, "
         f"est. cost ${result.cost_usd:.6f}."
     )
-    return pending_calls, log
+    usage = {
+        "stage": "planner",
+        "model": result.model,
+        "prompt_tokens": result.prompt_tokens,
+        "completion_tokens": result.completion_tokens,
+        "cost_usd": result.cost_usd,
+    }
+    return pending_calls, log, usage
 
 
 def plan_node(state: AgentStateV1) -> dict[str, Any]:
@@ -164,7 +173,7 @@ def plan_node(state: AgentStateV1) -> dict[str, Any]:
 
     llm_outcome = _plan_with_llm(state)
     if llm_outcome is not None:
-        pending_calls, log_entry = llm_outcome
+        pending_calls, log_entry, usage = llm_outcome
     else:
         # Macro-decomposition of user financial question (rule-based fallback)
         company = state.company_identifier or "UNKNOWN"
@@ -186,6 +195,7 @@ def plan_node(state: AgentStateV1) -> dict[str, Any]:
             f"[Planner {prompt_version}@{GRAPH_VERSION} (hash:{prompt_hash}) rules] "
             f"Generated plan with {len(pending_calls)} tasks. Strategy: {decomp.reasoning_plan}"
         )
+        usage = {}
 
     # Record anchoring: when the caller knows the filing the question is
     # about (the benchmark always does — FinQA ships question+filing as one
@@ -224,5 +234,6 @@ def plan_node(state: AgentStateV1) -> dict[str, Any]:
         "iteration_count": new_iteration,
         "tool_calls": pending_calls,
         "scratchpad": [log_entry],
+        "llm_usage": [usage] if usage else [],
         "risk_evaluated": False,
     }

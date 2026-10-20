@@ -25,7 +25,7 @@ def stream_sse_query(
         json=payload,
         stream=True,
         headers={"Accept": "text/event-stream"},
-        timeout=timeout_seconds,
+        timeout=(5.0, timeout_seconds),
     ) as response:
         response.raise_for_status()
 
@@ -53,3 +53,13 @@ def stream_sse_query(
                 current_event = line.replace("event:", "", 1).strip()
             elif line.startswith("data:"):
                 current_data_lines.append(line.replace("data:", "", 1).strip())
+
+        # Be tolerant of servers that close immediately after the final data
+        # line instead of sending the blank line required by the SSE spec.
+        if current_data_lines:
+            raw_data = "\n".join(current_data_lines)
+            try:
+                parsed_json = json.loads(raw_data)
+            except json.JSONDecodeError:
+                parsed_json = {"raw": raw_data}
+            yield {"event": current_event, "data": parsed_json}

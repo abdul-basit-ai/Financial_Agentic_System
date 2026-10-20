@@ -24,6 +24,15 @@ def append_tool_results(
     return left + list(right)
 
 
+def append_llm_usage(
+    left: list[dict[str, Any]], right: list[dict[str, Any]] | dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Append-only reducer for provider token/cost telemetry."""
+    if isinstance(right, dict):
+        return left + [right]
+    return left + list(right)
+
+
 def merge_sub_task_results(
     left: dict[str, Any], right: dict[str, Any]
 ) -> dict[str, Any]:
@@ -70,6 +79,10 @@ class AgentStateV1(BaseModel):
     sub_task_results: Annotated[dict[str, Any], merge_sub_task_results] = Field(
         default_factory=dict,
         description="Thread-safe accumulator for Phase 7 parallel fan-in",
+    )
+    llm_usage: Annotated[list[dict[str, Any]], append_llm_usage] = Field(
+        default_factory=list,
+        description="Per-call provider token and estimated cost telemetry",
     )
 
     # Memory & Context References

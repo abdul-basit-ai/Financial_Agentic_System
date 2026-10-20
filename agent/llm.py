@@ -82,23 +82,26 @@ class _ModelHandle:
     model_name: str
 
 
-_model_cache: _ModelHandle | None = None
+_model_cache: dict[str, _ModelHandle] = {}
 
 
-def _get_model() -> _ModelHandle | None:
+def _get_model(model_name_override: str | None = None) -> _ModelHandle | None:
     """Constructs the chat model once per process; None when unconfigured."""
-    global _model_cache
-    if _model_cache is not None:
-        return _model_cache if _model_cache.model is not None else None
-
     _load_env_file()
     if not is_llm_enabled():
         return None
 
+    requested_name = str(
+        model_name_override or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+    ).strip()
+    cached = _model_cache.get(requested_name)
+    if cached is not None:
+        return cached if cached.model is not None else None
+
     try:
         from langchain_openai import ChatOpenAI
 
-        model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+        model_name = requested_name
         kwargs: dict[str, Any] = {
             "model": model_name,
             "temperature": float(os.getenv("OPENAI_TEMPERATURE", "0")),
@@ -118,9 +121,10 @@ def _get_model() -> _ModelHandle | None:
             base_url == OPENROUTER_BASE_URL
             and os.getenv("OPENROUTER_DISABLE_REASONING", "1").strip() != "0"
         ):
-            kwargs["model_kwargs"] = {"reasoning": {"enabled": False}}
-        _model_cache = _ModelHandle(model=ChatOpenAI(**kwargs), model_name=model_name)
-        return _model_cache
+            kwargs["reasoning"] = {"enabled": False}
+        handle = _ModelHandle(model=ChatOpenAI(**kwargs), model_name=model_name)
+        _model_cache[requested_name] = handle
+        return handle
     except Exception as exc:
         print(
             f"[llm] Chat model unavailable ({type(exc).__name__}: {exc}); "
@@ -143,6 +147,7 @@ def invoke_llm(
     user_prompt: str,
     max_tokens: int = 1024,
     temperature: float | None = None,
+    model_name: str | None = None,
 ) -> LLMCallResult | None:
     """Runs one completion; returns None when LLM is unconfigured or fails.
 
@@ -152,14 +157,18 @@ def invoke_llm(
 
     Never raises — callers treat None as "use the deterministic fallback".
     """
-    handle = _get_model()
+    handle = _get_model(model_name)
     if handle is None:
         return None
 
     try:
         from langchain_core.messages import HumanMessage, SystemMessage
 
-        model = handle.model.bind(temperature=temperature) if temperature is not None else handle.model
+        model = (
+            handle.model.bind(temperature=temperature)
+            if temperature is not None
+            else handle.model
+        )
         response = model.invoke(
             [
                 SystemMessage(content=system_prompt),

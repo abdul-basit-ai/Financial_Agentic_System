@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 import uuid
@@ -16,6 +17,8 @@ from agent.graph import create_financial_agent
 from agent.memory.working import get_checkpointer
 from agent.server.routes import router as api_router
 from agent.telemetry import init_telemetry
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -76,12 +79,14 @@ def create_app() -> FastAPI:
     async def global_exception_handler(
         request: Request, exc: Exception
     ) -> JSONResponse:
+        trace_id = getattr(request.state, "trace_id", "unknown")
+        logger.exception("Unhandled gateway error (trace_id=%s)", trace_id)
         return JSONResponse(
             status_code=500,
             content={
                 "error": "InternalServerError",
-                "message": str(exc),
-                "trace_id": getattr(request.state, "trace_id", "unknown"),
+                "message": "The request could not be completed.",
+                "trace_id": trace_id,
             },
         )
 

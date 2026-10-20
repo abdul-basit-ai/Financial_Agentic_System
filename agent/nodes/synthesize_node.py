@@ -23,6 +23,12 @@ import re
 from typing import Any
 
 from agent.llm import extract_numerals, invoke_llm, is_llm_enabled
+from agent.nodes.program_examples import format_exemplars
+from agent.nodes.program_validation import (
+    execute_grounded_expression,
+    program_validation_flags,
+    requires_derived_program,
+)
 from agent.nodes.relevance import question_terms, relevance_hits
 from agent.prompts import load_prompt
 from agent.state.schema import AgentStateV1
@@ -33,7 +39,9 @@ MAX_GRAPH_ITERATIONS = 3
 _SYNTH_PROMPT_NAME = "synthesizer_v2"
 _PROGRAM_PROMPT_NAME = "program_gen_v1"
 
-_CELL_REF_RE = re.compile(r"cell\(\s*[\"']([^\"']+)[\"']\s*,\s*[\"']([^\"']+)[\"']\s*\)")
+_CELL_REF_RE = re.compile(
+    r"cell\(\s*[\"']([^\"']+)[\"']\s*,\s*[\"']([^\"']+)[\"']\s*\)"
+)
 
 
 def _norm_label(value: Any) -> str:
@@ -61,12 +69,18 @@ def _render_table_markdown(table_data: dict[str, Any]) -> str:
             amount = cell.get("amount")
             values[header] = "" if amount is None else str(amount)
         lines.append(
-            "| " + str(row.get("row_label") or "") + " | " + " | ".join(values.get(h, "") for h in headers) + " |"
+            "| "
+            + str(row.get("row_label") or "")
+            + " | "
+            + " | ".join(values.get(h, "") for h in headers)
+            + " |"
         )
     return "\n".join(lines)
 
 
-def _resolve_cell(table_data: dict[str, Any], row_ref: str, col_ref: str) -> float | None:
+def _resolve_cell(
+    table_data: dict[str, Any], row_ref: str, col_ref: str
+) -> float | None:
     """Resolves a cell(row, col) reference against the extracted table.
 
     Matching: exact label (case/whitespace-folded), then containment, then
@@ -82,7 +96,11 @@ def _resolve_cell(table_data: dict[str, Any], row_ref: str, col_ref: str) -> flo
         target_rows = [
             r
             for r in rows
-            if row_norm and (row_norm in _norm_label(r.get("row_label")) or _norm_label(r.get("row_label")) in row_norm)
+            if row_norm
+            and (
+                row_norm in _norm_label(r.get("row_label"))
+                or _norm_label(r.get("row_label")) in row_norm
+            )
         ]
     if not target_rows:
         return None
@@ -132,7 +150,9 @@ def _resolve_cells(program: str, table_data: dict[str, Any]) -> str:
 
 
 def _generate_and_execute_program(
-    state: AgentStateV1, table_env: dict[str, Any]
+    state: AgentStateV1,
+    table_env: dict[str, Any],
+    vector_results: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """Generates a FinQA program over the full table and executes it.
 
@@ -152,7 +172,18 @@ def _generate_and_execute_program(
     prompt_text, prompt_version, prompt_hash = load_prompt(_PROGRAM_PROMPT_NAME)
     table_data = table_env.get("data") or {}
     table_md = _render_table_markdown(table_data)
-    user_prompt = f"Question: {state.input}\n\nTable:\n{table_md}"
+    narrative_lines: list[str] = []
+    for envelope in vector_results or []:
+        for chunk in (envelope.get("data") or {}).get("chunks", [])[:5]:
+            narrative_lines.append(
+                f"[{chunk.get('section', 'narrative')}] {chunk.get('text_content', '')}"
+            )
+    narrative = "\n".join(narrative_lines) or "(no narrative evidence)"
+    user_prompt = (
+        f"Question: {state.input}\n\nTable:\n{table_md}\n\n"
+        f"Narrative evidence:\n{narrative}\n\n"
+        f"Train-only program examples:\n{format_exemplars(state.input)}"
+    )
 
     try:
         k_samples = max(1, int(os.getenv("PROGRAM_SELF_CONSISTENCY_SAMPLES", "5")))
@@ -165,7 +196,7 @@ def _generate_and_execute_program(
 
     from agent.nodes.plan_node import _extract_json
 
-    def _one_sample(sample_idx: int) -> tuple[float, str] | None:
+    def _one_sample(sample_idx: int) -> tuple[float, str, dict[str, Any]] | None:
         """One LLM sample -> resolved program -> executed value, or None."""
         result = invoke_llm(
             system_prompt=prompt_text,
@@ -186,7 +217,17 @@ def _generate_and_execute_program(
         math_result = safe_math_tool(SafeMathInput(expression=resolved))
         if not math_result.success or math_result.data is None:
             return None
-        return float(math_result.data.result), resolved
+        return (
+            float(math_result.data.result),
+            resolved,
+            {
+                "stage": "program_generator",
+                "model": result.model,
+                "prompt_tokens": result.prompt_tokens,
+                "completion_tokens": result.completion_tokens,
+                "cost_usd": result.cost_usd,
+            },
+        )
 
     if k_samples > 1:
         from concurrent.futures import ThreadPoolExecutor
@@ -198,17 +239,59 @@ def _generate_and_execute_program(
         outcomes = [_one_sample(0)]
 
     successful = [s for s in outcomes if s is not None]
-    if not successful:
-        print("[synthesize] program mode: no sample produced a computable program", flush=True)
-        return None
 
-    # Majority vote on values rounded to 6 decimals: identical programs
-    # yield bit-identical floats, different-but-equivalent programs may
-    # differ in the last ulp.
-    votes = Counter(round(value, 6) for value, _ in successful)
-    winning_key, winning_count = votes.most_common(1)[0]
-    winner = next(s for s in successful if round(s[0], 6) == winning_key)
-    answer_value, resolved = winner
+    allowed_values: set[float] = set()
+    for token in re.findall(r"-?\d[\d,]*(?:\.\d+)?", user_prompt):
+        try:
+            allowed_values.add(float(token.replace(",", "")))
+        except ValueError:
+            pass
+
+    # Even when every sampled JSON program is malformed, the verifier can
+    # construct a grounded expression from the question and evidence.
+    if not successful:
+        verified = _verify_program_candidates(
+            state=state,
+            user_prompt=user_prompt,
+            candidates=[],
+            allowed_values=allowed_values,
+        )
+        if verified is None:
+            print(
+                "[synthesize] program mode: no sample produced a computable program",
+                flush=True,
+            )
+            return None
+        answer_value, resolved, verifier_log, verifier_usage = verified
+        winning_count = 0
+        usage_entries = [verifier_usage]
+    else:
+        usage_entries = []
+
+    if successful:
+        # Majority vote on values rounded to 6 decimals: identical programs
+        # yield bit-identical floats, different-but-equivalent programs may
+        # differ in the last ulp.
+        votes = Counter(round(value, 6) for value, _, _ in successful)
+        winning_key, winning_count = votes.most_common(1)[0]
+        winner = next(s for s in successful if round(s[0], 6) == winning_key)
+        answer_value, resolved, _ = winner
+        usage_entries.extend(item[2] for item in successful)
+
+        verifier_log = ""
+        needs_verifier = (
+            requires_derived_program(state.input) or winning_count < k_samples
+        )
+        if needs_verifier:
+            verified = _verify_program_candidates(
+                state=state,
+                user_prompt=user_prompt,
+                candidates=[expr for _, expr, _ in successful],
+                allowed_values=allowed_values,
+            )
+            if verified is not None:
+                answer_value, resolved, verifier_log, verifier_usage = verified
+                usage_entries.append(verifier_usage)
 
     log = (
         f"[ProgramGen {prompt_version} (hash:{prompt_hash}) self-consistency "
@@ -239,13 +322,75 @@ def _generate_and_execute_program(
         "final_answer": final_text,
         "is_terminal": True,
         "tool_results": [program_envelope],
+        "llm_usage": usage_entries,
         "scratchpad": [
             log,
+            verifier_log,
             f"[ProgramGen] Executed '{resolved}' -> {answer_value} "
             f"({winning_count}/{k_samples} sample majority)",
         ],
     }
 
+
+def _verify_program_candidates(
+    state: AgentStateV1,
+    user_prompt: str,
+    candidates: list[str],
+    allowed_values: set[float],
+) -> tuple[float, str, str, dict[str, Any]] | None:
+    """Ask a configurable verifier to select/correct a grounded candidate."""
+    import os
+
+    from agent.nodes.plan_node import _extract_json
+
+    candidate_block = "\n".join(
+        f"Candidate {idx}: {expr} | flags={program_validation_flags(state.input, expr)}"
+        for idx, expr in enumerate(candidates)
+    )
+    verifier_prompt = f"{user_prompt}\n\nCandidates:\n{candidate_block}"
+    result = invoke_llm(
+        system_prompt=load_prompt("program_verify_v1")[0],
+        user_prompt=verifier_prompt,
+        max_tokens=350,
+        temperature=0.0,
+        model_name=os.getenv("PROGRAM_VERIFIER_MODEL") or None,
+    )
+    if result is None:
+        return None
+    parsed = _extract_json(result.content)
+    if not isinstance(parsed, dict):
+        return None
+    expression: str | None = None
+    selected = parsed.get("selected_index")
+    if isinstance(selected, int) and 0 <= selected < len(candidates):
+        expression = candidates[selected]
+    elif isinstance(parsed.get("corrected_expression"), str):
+        expression = parsed["corrected_expression"].strip()
+    if not expression:
+        return None
+    executed = execute_grounded_expression(expression, state.input, allowed_values)
+    if executed is None:
+        return None
+    value, flags = executed
+    if flags:
+        return None
+    log = (
+        f"[ProgramVerifier llm:{result.model}] selected/corrected expression; "
+        f"tokens {result.prompt_tokens}+{result.completion_tokens}, "
+        f"est. cost ${result.cost_usd:.6f}; flags={flags}."
+    )
+    return (
+        value,
+        expression,
+        log,
+        {
+            "stage": "program_verifier",
+            "model": result.model,
+            "prompt_tokens": result.prompt_tokens,
+            "completion_tokens": result.completion_tokens,
+            "cost_usd": result.cost_usd,
+        },
+    )
 
 
 def _to_float(token: str) -> float | None:
@@ -405,7 +550,9 @@ def synthesize_node(state: AgentStateV1) -> dict[str, Any]:
         # that way). Falls through to the evidence-bundle synthesis on any
         # program failure; deterministic mode (no LLM) keeps the old paths.
         if table_envs and is_llm_enabled():
-            program_outcome = _generate_and_execute_program(state, table_envs[0])
+            program_outcome = _generate_and_execute_program(
+                state, table_envs[0], vector_results
+            )
             if program_outcome is not None:
                 return program_outcome
 

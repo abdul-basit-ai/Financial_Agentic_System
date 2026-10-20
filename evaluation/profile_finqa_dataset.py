@@ -13,6 +13,7 @@ import re
 from collections import Counter
 from collections.abc import Iterable
 from statistics import mean
+from typing import Any
 
 SPLITS = ["train", "dev", "test", "private_test"]
 PROGRAM_OPS = {
@@ -116,9 +117,14 @@ METRIC_CATEGORIES = {
 }
 
 
-def load_split(path: str) -> list[dict]:
+def load_split(path: str) -> list[dict[str, Any]]:
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        payload = json.load(f)
+    if not isinstance(payload, list) or not all(
+        isinstance(record, dict) for record in payload
+    ):
+        raise ValueError(f"Expected a JSON array of objects in {path}")
+    return payload
 
 
 def token_count(text: str) -> int:
@@ -194,25 +200,25 @@ def ensure_parent(path: str) -> None:
         os.makedirs(parent, exist_ok=True)
 
 
-def profile_dataset(dataset_dir: str) -> dict:
-    top_keys_union = set()
-    top_keys_intersection = None
-    qa_keys_union = set()
-    qa_keys_intersection = None
+def profile_dataset(dataset_dir: str) -> dict[str, Any]:
+    top_keys_union: set[str] = set()
+    top_keys_intersection: set[str] | None = None
+    qa_keys_union: set[str] = set()
+    qa_keys_intersection: set[str] | None = None
 
-    split_stats = {}
-    global_program_ops = Counter()
-    global_qtypes = Counter()
-    global_categories = Counter()
+    split_stats: dict[str, dict[str, Any]] = {}
+    global_program_ops: Counter[str] = Counter()
+    global_qtypes: Counter[str] = Counter()
+    global_categories: Counter[str] = Counter()
 
-    edge_cases = Counter()
+    edge_cases: Counter[str] = Counter()
 
     for split in SPLITS:
         records = load_split(os.path.join(dataset_dir, f"{split}.json"))
 
-        split_ops = Counter()
-        split_qtypes = Counter()
-        split_categories = Counter()
+        split_ops: Counter[str] = Counter()
+        split_qtypes: Counter[str] = Counter()
+        split_categories: Counter[str] = Counter()
 
         q_lens = []
         table_rows = []

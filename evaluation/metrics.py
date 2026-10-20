@@ -42,6 +42,21 @@ def parse_float_safe(val: Any) -> float | None:
     return None
 
 
+def parse_answer_float(val: Any) -> float | None:
+    """Extract an answer value without mistaking explanation figures for it.
+
+    Synthesized responses commonly include years, source values, or citation
+    numbers before a final ``Answer:`` line.  When that marker is present, the
+    text after its last occurrence is authoritative; unstructured responses
+    retain the legacy first-number fallback.
+    """
+    text = str(val or "")
+    marker = text.lower().rfind("answer:")
+    if marker != -1:
+        text = text[marker + len("answer:") :]
+    return parse_float_safe(text)
+
+
 def is_numeric_match(
     pred: Any,
     gold: Any,

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=83.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -26,14 +26,17 @@ dependencies = [
     "python-dotenv>=1.0",
     "pydantic>=2.0",
     "requests>=2.31",
+    "urllib3>=2.8.0",
+    "PyJWT>=2.15.0",
 ]
 
 [project.optional-dependencies]
 embeddings = [
-    "sentence-transformers>=3.0,<4.0",
-    "transformers>=4.41,<5.0",
+    "sentence-transformers>=5.6,<6.0",
+    "transformers>=5.10,<6.0",
 ]
 dev = [
+    "setuptools>=83.0",
     "black>=24.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -43,8 +46,7 @@ dev = [
     "isort>=5.13",
     "pre-commit>=3.7",
     "pip-audit>=2.7",
-    "ragas>=0.1",
-    "deepeval>=0.21",
+    "virtualenv>=21.7.13",
 ]
 mlops = [
     "mlflow>=2.13",
@@ -73,6 +75,7 @@ include = [
 ]
 
 [tool.poetry.group.dev.dependencies]
+setuptools = ">=83.0"
 black = ">=24.0"
 pytest = ">=8.0"
 pytest-asyncio = ">=0.23"
@@ -80,6 +83,8 @@ ruff = ">=0.4"
 mypy = ">=1.10"
 isort = ">=5.13"
 pre-commit = ">=3.7"
+pip-audit = ">=2.7"
+virtualenv = ">=21.7.13"
 
 [tool.poetry.group.mlops.dependencies]
 mlflow = ">=2.13"

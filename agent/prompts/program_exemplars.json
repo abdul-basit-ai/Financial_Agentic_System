@@ -1,0 +1,194 @@
+[
+  {
+    "question": "for acquired customer-related and network location intangibles , what is the expected annual amortization expenses , in millions?",
+    "program": "add(75.0, 72.7), divide(#0, 20)"
+  },
+  {
+    "question": "in millions , what is the total of home equity lines of credit?",
+    "program": "add(15553, 7376)"
+  },
+  {
+    "question": "what was the average effect , in millions , of the dilutive securities in 2012-14?",
+    "program": "add(2.1, 0.7), add(#0, 0.1), divide(#1, const_3)"
+  },
+  {
+    "question": "what was the total fees earned in 2016 for management , leasing and construction and development",
+    "program": "add(4.5, 2.4), add(8.0, #0)"
+  },
+  {
+    "question": "what was the average shares granted as part of the long-term incentive plan , in the first quarter of 2012 , 2011 and 2010\\\\n",
+    "program": "add(100000, 92500), add(#0, #0), add(#1, const_3), divide(#2, const_2)"
+  },
+  {
+    "question": "for 2013 and 2012 , what was total noninterest income in millions?",
+    "program": "add(286, 272)"
+  },
+  {
+    "question": "in 2016 what was the percent of the total operating leases that was due including terms greater than 12 months",
+    "program": "add(535, 3043), divide(535, #0)"
+  },
+  {
+    "question": "considering the years 2006-2009 , what is the value of the average additions?",
+    "program": "add(96454, 101321), multiply(const_1000, 103.698), add(#0, #1), divide(#2, const_3)"
+  },
+  {
+    "question": "what is the the interest expense in 2009?",
+    "program": "divide(100, 100), divide(3.8, #0)"
+  },
+  {
+    "question": "what was the total operating expenses in 2018 in millions",
+    "program": "divide(9896, 23.6%)"
+  },
+  {
+    "question": "what percentage of total cash and investments as of dec . 29 2012 was comprised of available-for-sale investments?",
+    "program": "divide(14001, 26302)"
+  },
+  {
+    "question": "what was the growth rate of the loans held-for-sale that are carried at locom from 2009 to 2010",
+    "program": "divide(2.5, 1.6), divide(#0, 1.6)"
+  },
+  {
+    "question": "in 2019 what was the percent of the net earnings to the net cash provided by operating activities",
+    "program": "divide(1786.2, 2807.0)"
+  },
+  {
+    "question": "what is the percent of the labor-related deemed claim as part of the total reorganization items net in 2013",
+    "program": "divide(1733, 2655)"
+  },
+  {
+    "question": "in 2013 what percentage of total net revenues for the investing & lending segment were due to debt securities and loans?",
+    "program": "divide(1947, 7018)"
+  },
+  {
+    "question": "what percentage of total reorganization items net consisted of labor-related deemed claim?",
+    "program": "divide(1733, 2640)"
+  },
+  {
+    "question": "during the 2012 year , did the equity awards in which the prescribed performance milestones were achieved exceed the equity award compensation expense for equity granted during the year?",
+    "program": "multiply(607, 18.13), multiply(#0, const_1000), multiply(3.3, const_1000000), greater(#1, #2)"
+  },
+  {
+    "question": "how is net change in cash from financing activity affected by the share repurchase during december 20018 , ( in millions ) ?",
+    "program": "multiply(1327657, 42.61), divide(#0, const_1000000)"
+  },
+  {
+    "question": "what is the amount of interest payment incurred from the bonds issued by the mississippi business finance corporation?",
+    "program": "multiply(83.7, 7.81%), divide(#0, const_2)"
+  },
+  {
+    "question": "if you held 1000 shares on may 30 , 2014 , how much would you receive in dividends?",
+    "program": "multiply(0.0425, 1000)"
+  },
+  {
+    "question": "what would be the total common stock par value if all authorized shares were outstanding?",
+    "program": "multiply(525000000, 0.25)"
+  },
+  {
+    "question": "how many segmented sales did the 5 largest customers account for in 2008?",
+    "program": "multiply(10086, 42%)"
+  },
+  {
+    "question": "what is the amount of the first installment of the 19 billion 2015 term loan facility payable on june 27 , 2016 in billions",
+    "program": "multiply(1.9, 1.25%)"
+  },
+  {
+    "question": "without the foreign currency translation gain , what would 2008 sales have been in the performance coatings segment , in millions?\\\\n",
+    "program": "multiply(3811, 2%), subtract(4716, #0)"
+  },
+  {
+    "question": "did jpmorgan chase outperform the kbw bank index?",
+    "program": "greater(189.57, 137.82)"
+  },
+  {
+    "question": "in the equity plans for 2006 , are there more shares issued than remaining in the plan?",
+    "program": "greater(5941210, 4852978)"
+  },
+  {
+    "question": "in millions for 2016 , was the average daily var by risk category for impact of interest rates greater than equity prices?",
+    "program": "greater(45, 25)"
+  },
+  {
+    "question": "what was the greatest annual amount in millions of cumulative foreign currency translation?",
+    "program": "table_max(cumulative foreign currency translation, none)"
+  },
+  {
+    "question": "does a .5% ( .5 % ) decrease in discount rate have a greater impact on pension expense than a .5% ( .5 % ) decrease in expected long-term return on assets?",
+    "program": "greater(1, 10)"
+  },
+  {
+    "question": "considering the eog's roll forward of valuation allowances for deferred income tax assets during 2015-2017 , what was the highest value registered in the beginning balance?",
+    "program": "table_max(beginning balance, none)"
+  },
+  {
+    "question": "did apple outperform ( earn a greater return ) than the s&p information technology index in september 2018?",
+    "program": "greater(359, 275)"
+  },
+  {
+    "question": "for 2013 , was the basel i tier 1 common capital $ 28484 without phased-in regulatory capital adjustments greater than estimated basel iii transitional tier 1 common capital with 2014 phase-ins?",
+    "program": "greater(28484, 28886)"
+  },
+  {
+    "question": "what is the growth rate in net revenue in 2008?",
+    "program": "subtract(959.2, 991.1), divide(#0, 991.1)"
+  },
+  {
+    "question": "what percentage decrease occurred from 2011-2012 for deferred acquisition payments?",
+    "program": "subtract(34.8, 1.2), divide(#0, 34.8), multiply(#1, const_100)"
+  },
+  {
+    "question": "what is the change in net assets from 2007 to 2008?",
+    "program": "subtract(2309.9, 2303.0)"
+  },
+  {
+    "question": "what is the percent change in net revenue between 2007 and 2008?",
+    "program": "subtract(440.9, 442.3), divide(#0, 442.3)"
+  },
+  {
+    "question": "in february 2016 what was the percent reduction in the board of directors authorized the repurchase to the february 2014",
+    "program": "subtract(10, 12), divide(#0, 12)"
+  },
+  {
+    "question": "in millions between 2014 and 2013 , what was the change in net derivative liabilities under bilateral agreements?\\\\n",
+    "program": "subtract(35764, 22176)"
+  },
+  {
+    "question": "what was the net notional amounts of purchases and sales under sfas 140 in 2003 ( us$ b ) ?",
+    "program": "subtract(15, 8)"
+  },
+  {
+    "question": "what is percentage change in total conduit asset from 2007 to 2008?",
+    "program": "subtract(23.59, 28.37), divide(#0, 28.37)"
+  },
+  {
+    "question": "considering the year 2016 , what is the average revenue?",
+    "program": "table_average(2016, none)"
+  },
+  {
+    "question": "for the years ended december 31 2017 , 2016 , and 2015 , what was the average beginning balance in millions?",
+    "program": "table_average(beginning balance, none)"
+  },
+  {
+    "question": "what was the average bad debt allowance for the past three years , in billions?",
+    "program": "table_average(balance as of december 31, none)"
+  },
+  {
+    "question": "what were average operating profit for aeronautics in millions from 2008 to 2010?",
+    "program": "table_average(operating profit, none)"
+  },
+  {
+    "question": "what were average yearly capital expenditures for corporate , in millions?",
+    "program": "table_average(corporate, none)"
+  },
+  {
+    "question": "what were average operating profit for space systems in millions between 2014 and 2016?",
+    "program": "table_average(operating profit, none)"
+  },
+  {
+    "question": "what were average net sales for mst in millions from 2013 to 2015?",
+    "program": "table_average(net sales, none)"
+  },
+  {
+    "question": "for unrealized losses related to derivative amounts included in 201caccumulated other comprehensive loss 201d for the years ended december 31 , ( in thousands ) , what was the average balance in accumulated other comprehensive loss for the two years?",
+    "program": "table_average(interest rate swaps, none)"
+  }
+]

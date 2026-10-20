@@ -26,7 +26,12 @@ def read_jsonl(path: str) -> Iterable[dict[str, Any]]:
 def load_raw_split(dataset_dir: str, split: str) -> list[dict[str, Any]]:
     path = os.path.join(dataset_dir, f"{split}.json")
     with open(path, encoding="utf-8") as f:
-        return json.load(f)
+        payload = json.load(f)
+    if not isinstance(payload, list) or not all(
+        isinstance(record, dict) for record in payload
+    ):
+        raise ValueError(f"Expected a JSON array of objects in {path}")
+    return payload
 
 
 def index_raw_records(raw_records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
@@ -47,7 +52,7 @@ def compare_record(
     parsed: dict[str, Any], raw: dict[str, Any], split: str
 ) -> tuple[list[str], Counter, dict[str, float]]:
     anomalies: list[str] = []
-    missing = Counter()
+    missing: Counter[str] = Counter()
 
     qa = raw.get("qa", {}) if isinstance(raw.get("qa"), dict) else {}
 
@@ -147,9 +152,9 @@ def validate_split(dataset_dir: str, parsed_dir: str, split: str) -> dict[str, A
         ),
     }
 
-    anomalies = Counter()
-    missing = Counter()
-    missing_pcts = defaultdict(list)
+    anomalies: Counter[str] = Counter()
+    missing: Counter[str] = Counter()
+    missing_pcts: defaultdict[str, list[float]] = defaultdict(list)
 
     parsed_ids = set()
     for rec in parsed_records:

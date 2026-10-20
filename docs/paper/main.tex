@@ -75,45 +75,65 @@ The system is organized in five layers (Fig.~\ref{fig:arch}):
 \begin{figure}[t]
 \centering
 \resizebox{\columnwidth}{!}{%
-\begin{tikzpicture}[x=1cm, y=1cm, every node/.style={inner sep=2pt}]
-  % ---------- explicit grid layout (no relative placement) ----------
-  % Row 1 (y=5): interface
-  \node[data] (ui)  at (1.4, 5)  {Streamlit UI};
-  \node[data] (api) at (5.6, 5)  {FastAPI :8000};
-  % Row 2 (y=3.6): orchestration
-  \node[proc, minimum width=6.8cm] (orch) at (3.5, 3.6) {LangGraph StateGraph (AgentState)};
-  % Row 3 (y=2.2): stores + fusion, evenly spaced
-  \node[store] (qdr) at (1.0, 2.2) {Qdrant};
-  \node[store] (neo) at (3.5, 2.2) {Neo4j};
-  \node[store] (rrf) at (6.0, 2.2) {RRF fusion};
-  % Row 4 (y=0.8): reasoning
-  \node[data] (llm) at (2.2, 0.8) {OpenRouter LLM};
-  \node[proc] (val) at (5.2, 0.8) {Validator};
-  % Row 5 (y=-0.8): persistence
-  \node[store, minimum width=5.0cm] (sql) at (3.5, -0.8) {SQLite audit ledger};
-  % ---------- edges (vertical layer flows only) ----------
+\begin{tikzpicture}[
+    x=1cm, y=1cm,
+    every node/.style={inner sep=4pt, font=\small},
+    data/.style ={draw, rounded corners=2pt, fill=blue!8,  minimum width=3.0cm, minimum height=0.9cm, align=center},
+    proc/.style ={draw, rounded corners=2pt, fill=orange!10, minimum width=3.0cm, minimum height=0.9cm, align=center},
+    store/.style={draw, rounded corners=2pt, fill=green!10, minimum width=2.6cm, minimum height=0.9cm, align=center},
+    lab/.style  ={font=\scriptsize\itshape, gray!70!black},
+    arr/.style  ={-{Latex[length=2.2mm]}, thick, gray!20!black}
+]
+  % ---------- explicit grid layout ----------
+  % Row 1 (y=6.4): interface
+  \node[data] (ui)  at (1.6, 6.4) {Streamlit UI};
+  \node[data] (api) at (5.6, 6.4) {FastAPI :8000};
+
+  % Row 2 (y=4.8): orchestration
+  \node[proc, minimum width=7.4cm] (orch) at (3.6, 4.8) {LangGraph StateGraph (AgentState)};
+
+  % Row 3 (y=3.2): stores + fusion, evenly spaced
+  \node[store] (qdr) at (0.6, 3.2) {Qdrant};
+  \node[store] (neo) at (3.6, 3.2) {Neo4j};
+  \node[store] (rrf) at (6.6, 3.2) {RRF fusion};
+
+  % Row 4 (y=1.6): reasoning
+  \node[data] (llm) at (1.8, 1.6) {OpenRouter LLM};
+  \node[proc] (val) at (5.4, 1.6) {Validator};
+
+  % Row 5 (y=0.0): persistence
+  \node[store, minimum width=5.4cm] (sql) at (3.6, 0.0) {SQLite audit ledger};
+
+  % ---------- edges (vertical layer flows) ----------
   \draw[arr] (ui.south)  -- (orch.north -| ui.south);
   \draw[arr] (api.south) -- (orch.north -| api.south);
+
   \draw[arr] (orch.south -| qdr.north) -- (qdr.north);
   \draw[arr] (orch.south -| neo.north) -- (neo.north);
   \draw[arr] (orch.south -| rrf.north) -- (rrf.north);
+
+  \draw[arr] (qdr.south) -- ++(0,-0.5) -| (llm.north);
+  \draw[arr] (neo.south) -- ++(0,-0.5) -| (llm.north);
   \draw[arr] (rrf.south) -- (val.north -| rrf.south);
-  % forward and feedback arrows as offset parallel paths (no overlap)
-  \draw[arr] ([yshift=2.5pt]llm.east) -- ([yshift=2.5pt]val.west);
-  \draw[arr] ([yshift=-2.5pt]val.west) -- ([yshift=-2.5pt]llm.east);
+
+  % forward and feedback arrows as offset parallel paths
+  \draw[arr] ([yshift=3pt]llm.east)  -- node[above, lab]{propose} ([yshift=3pt]val.west);
+  \draw[arr] ([yshift=-3pt]val.west) -- node[below, lab]{revise}  ([yshift=-3pt]llm.east);
+
   \draw[arr] (llm.south) -- (sql.north -| llm.south);
   \draw[arr] (val.south) -- (sql.north -| val.south);
-  % layer guides
-  \draw[gray!40, dashed] (-0.4,4.5) -- (7.4,4.5)  node[pos=0, lab, above right]{interface};
-  \draw[gray!40, dashed] (-0.4,2.9) -- (7.4,2.9)  node[pos=0, lab, above right]{orchestration};
-  \draw[gray!40, dashed] (-0.4,1.5) -- (7.4,1.5)  node[pos=0, lab, above right]{retrieval};
-  \draw[gray!40, dashed] (-0.4,0.1) -- (7.4,0.1)  node[pos=0, lab, above right]{reasoning};
+
+  % ---------- layer guides ----------
+  \draw[gray!40, dashed] (-0.6,5.7) -- (7.8,5.7) node[pos=0, lab, above right]{interface};
+  \draw[gray!40, dashed] (-0.6,4.1) -- (7.8,4.1) node[pos=0, lab, above right]{orchestration};
+  \draw[gray!40, dashed] (-0.6,2.4) -- (7.8,2.4) node[pos=0, lab, above right]{retrieval};
+  \draw[gray!40, dashed] (-0.6,0.85) -- (7.8,0.85) node[pos=0, lab, above right]{reasoning};
+
 \end{tikzpicture}%
 }
 \caption{Layered system architecture. Dashed guides mark layers; the parallel forward/feedback arrows between the LLM and validator implement the correction loop.}
 \label{fig:arch}
 \end{figure}
-
 \subsection{Data Model}
 The Neo4j schema contains \texttt{(:Company)}, \texttt{(:Metric)}, \texttt{(:Fil\-ing)}, \texttt{(:Event)}, and \texttt{(:Source)} nodes with typed edges such as \texttt{REPORTS}, \texttt{HAS\_METRIC}, \texttt{MENTIONS}, and \texttt{CITES}. Vector payloads store \texttt{chunk\_id}, \texttt{source\_id}, and \texttt{entity\_ids} so dense hits can be joined back to graph nodes --- this join is what makes hybrid fusion sound rather than heuristic.
 

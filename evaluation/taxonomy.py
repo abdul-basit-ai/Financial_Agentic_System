@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from evaluation.metrics import is_numeric_match, is_program_match
+from evaluation.metrics import is_numeric_match, is_program_match, parse_answer_float
 
 
 class FailureCategory(StrEnum):
@@ -71,11 +71,12 @@ def classify_failure(
         for r in tool_results
         if r.get("tool_name") in {"safe_math", "code_interpreter"} and r.get("data")
     ]
-    candidate_answer = math_results[-1] if math_results else final_answer
+    final_answer_value = parse_answer_float(final_answer)
+    candidate_answer = math_results[-1] if math_results else final_answer_value
 
     is_exe_correct = is_numeric_match(
         candidate_answer, gold_answer
-    ) or is_numeric_match(final_answer, gold_answer)
+    ) or is_numeric_match(final_answer_value, gold_answer)
 
     if is_exe_correct:
         return TaxonomyAttribution(

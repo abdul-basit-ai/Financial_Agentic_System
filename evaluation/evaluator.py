@@ -12,6 +12,7 @@ from evaluation.metrics import (
     compute_ir_metrics_content,
     is_numeric_match,
     is_program_match,
+    parse_answer_float,
     parse_float_safe,
 )
 from evaluation.taxonomy import FailureCategory, TaxonomyAttribution, classify_failure
@@ -135,24 +136,13 @@ class FinQAEvaluator:
             if r.get("tool_name") in {"safe_math", "code_interpreter"} and r.get("data")
         ]
 
-        def _float_from_answer_text(text: Any) -> float | None:
-            """Parses the number after a trailing 'Answer:' marker when the
-            synthesizer emitted one, else the first number in the text.
-            Whole-text scanning otherwise catches citation figures (years,
-            row amounts) that are not the answer."""
-            s = str(text or "")
-            marker = s.lower().rfind("answer:")
-            if marker != -1:
-                s = s[marker + len("answer:") :]
-            return parse_float_safe(s)
-
         # 1. Primary prediction: the executed math result (deterministic,
         # exact). Without math, the synthesized answer text (marker-aware).
         pred_float = None
         if math_results:
             pred_float = parse_float_safe(math_results[-1])
         if pred_float is None:
-            pred_float = _float_from_answer_text(final_state.get("final_answer"))
+            pred_float = parse_answer_float(final_state.get("final_answer"))
         gold_float = parse_float_safe(record.gold_answer)
 
         # 2. Compute Metric Accuracies. final_answer is the fallback — the
@@ -161,7 +151,7 @@ class FinQAEvaluator:
         # right figure directly from evidence).
         exe_match = is_numeric_match(pred_float, gold_float)
         if not exe_match:
-            fallback_float = _float_from_answer_text(final_state.get("final_answer"))
+            fallback_float = parse_answer_float(final_state.get("final_answer"))
             if is_numeric_match(fallback_float, gold_float):
                 pred_float = fallback_float
                 exe_match = True
@@ -251,6 +241,12 @@ class FinQAEvaluator:
             taxonomy=attr.category,
             taxonomy_explanation=attr.explanation,
             latency_ms=round(elapsed_ms, 3),
-            token_cost_usd=0.0,
+            token_cost_usd=round(
+                sum(
+                    float(item.get("cost_usd", 0.0))
+                    for item in final_state.get("llm_usage", [])
+                ),
+                6,
+            ),
             trace_id=final_state.get("trace_id", "trace_simulated"),
         )

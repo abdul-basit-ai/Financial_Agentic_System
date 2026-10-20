@@ -13,11 +13,16 @@ from __future__ import annotations
 import pytest
 
 from evaluation.evaluator import EvaluationRecord, FinQAEvaluator
-from evaluation.gate import compute_bootstrap_ci, compute_mcnemar_p_value_1df, compute_mcnemar_test
+from evaluation.gate import (
+    compute_bootstrap_ci,
+    compute_mcnemar_p_value_1df,
+    compute_mcnemar_test,
+)
 from evaluation.metrics import (
     compute_ir_metrics,
     is_numeric_match,
     is_program_match,
+    parse_answer_float,
     parse_float_safe,
 )
 from evaluation.taxonomy import FailureCategory, classify_failure
@@ -32,6 +37,11 @@ def test_parse_float_safe() -> None:
     assert parse_float_safe("€ 45.2%") == 45.2
     assert parse_float_safe("-350") == -350.0
     assert parse_float_safe("invalid") is None
+
+
+def test_parse_answer_float_prefers_trailing_answer_marker() -> None:
+    text = "The source value is 0.60306. Answer: 1.163385826771652"
+    assert parse_answer_float(text) == 1.163385826771652
 
 
 def test_is_numeric_match_tolerances() -> None:
@@ -141,6 +151,20 @@ def test_classify_failure_taxonomy() -> None:
         recall_at_k=1.0,
     )
     assert attr_plan.category == FailureCategory.PLANNING_ERROR
+
+
+def test_taxonomy_does_not_treat_explanation_number_as_final_answer() -> None:
+    state = {
+        "final_answer": "The cited source reports 0.60306. Answer: 1.163385826771652",
+        "tool_results": [],
+    }
+    attr = classify_failure(
+        state,
+        gold_answer=0.60306,
+        gold_program="divide(100, 10)",
+        recall_at_k=1.0,
+    )
+    assert attr.category == FailureCategory.PLANNING_ERROR
 
 
 # =====================================================================

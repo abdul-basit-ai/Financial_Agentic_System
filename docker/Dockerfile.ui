@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir streamlit
+RUN pip install --no-cache-dir "streamlit>=1.35" "requests>=2.31"
 COPY ui/ ./ui/
 
 EXPOSE 8501

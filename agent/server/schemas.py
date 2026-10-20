@@ -12,19 +12,33 @@ from pydantic import BaseModel, ConfigDict, Field
 class QueryRequest(BaseModel):
     """Payload for initiating a financial reasoning query."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     query: str = Field(
-        ..., description="Natural language financial question or instruction"
+        ...,
+        min_length=1,
+        max_length=4_000,
+        description="Natural language financial question or instruction",
     )
     company_identifier: str | None = Field(
-        default=None, description="Company ticker or identifier (e.g., 'AAPL', 'AMZN')"
+        default=None,
+        max_length=64,
+        description="Company ticker or identifier (e.g., 'AAPL', 'AMZN')",
     )
     thread_id: str = Field(
         default_factory=lambda: f"thread_{uuid.uuid4().hex[:12]}",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_.:-]+$",
         description="Persistent conversation/execution thread ID for checkpointing",
     )
-    tenant_id: str = Field(default="default", description="Tenant isolation identifier")
+    tenant_id: str = Field(
+        default="default",
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_.:-]+$",
+        description="Tenant isolation identifier",
+    )
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Arbitrary caller-provided metadata tags"
     )
@@ -56,15 +70,24 @@ class JobStatusResponse(BaseModel):
 class HITLApprovalRequest(BaseModel):
     """Analyst review decision payload to resume an interrupted state machine."""
 
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
     # NOTE: the graph's hitl_gate understands APPROVE / REJECT / EDIT (an EDIT
     # must carry overrides.tool_calls). "OVERRIDE" here is a UI-facing alias
     # that must map to EDIT, otherwise the gate fails closed to REJECT.
     action: Literal["APPROVE", "REJECT", "EDIT", "OVERRIDE"] = Field(
         ..., description="Compliance review action"
     )
-    analyst_id: str = Field(default="analyst_system", description="Reviewer identifier")
+    analyst_id: str = Field(
+        default="analyst_system",
+        min_length=1,
+        max_length=128,
+        description="Reviewer identifier",
+    )
     feedback: str = Field(
-        default="", description="Review justification or critique notes"
+        default="",
+        max_length=4_000,
+        description="Review justification or critique notes",
     )
     overrides: dict[str, Any] = Field(
         default_factory=dict,

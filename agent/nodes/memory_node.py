@@ -49,7 +49,9 @@ def read_memory_node(state: AgentStateV1) -> dict[str, Any]:
 def write_memory_node(state: AgentStateV1) -> dict[str, Any]:
     """Promotes completed session state into durable long-term episodic memory."""
     try:
-        engine = MemoryPromotionEngine()
+        from agent.tools._clients import get_episodic_store
+
+        engine = MemoryPromotionEngine(episodic_store=get_episodic_store())
         session_id = f"sess_{state.trace_id[:8]}"
         promoted_id = engine.promote_session(session_id=session_id, state=state)
         status_msg = (

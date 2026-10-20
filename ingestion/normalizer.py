@@ -246,6 +246,7 @@ def normalize_record(rec: dict[str, Any]) -> dict[str, Any]:
     table_obj = normalize_table(rec.get("table", []), text_context=text_context)
 
     ans_num, ans_is_pct = parse_numeric(answer_text)
+    answer_norm: dict[str, str | float | None]
     if ans_is_pct:
         # Percentages are dimensionless — never scale by table unit context.
         answer_norm = {"value_base": ans_num, "unit_label": "percent"}

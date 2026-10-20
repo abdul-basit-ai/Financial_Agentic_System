@@ -22,8 +22,11 @@ jobs:
       - name: Lint (ruff)
         run: ruff check .
 
+      - name: Format check (black)
+        run: black --check .
+
       - name: Type-check (mypy)
-        run: mypy agent/
+        run: mypy agent api ingestion knowledge evaluation observability ui
 
       - name: Unit + integration tests (offline-safe)
         run: pytest tests/ -v

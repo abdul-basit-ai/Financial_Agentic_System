@@ -71,7 +71,7 @@ class VectorStoreLoader:
         password: str = "password",
         model_name: str = EMBEDDING_MODEL_NAME,
     ) -> None:
-        self.conn_params = {
+        self.conn_params: dict[str, Any] = {
             "host": host,
             "port": port,
             "dbname": dbname,
@@ -192,13 +192,16 @@ class VectorStoreLoader:
         self._conn.commit()
         return len(payload)
 
-    def query_similarity(self, text: str, top_k: int = 5) -> list[dict[str, Any]]:
+    def query_similarity(
+        self, text: str, top_k: int = 5, record_id: str | None = None
+    ) -> list[dict[str, Any]]:
         assert self._conn is not None
         query_emb = self.model.encode(text, normalize_embeddings=True).tolist()
 
         sql = """
         SELECT record_id, section, chunk_index, text_content, 1 - (embedding <=> %(embedding)s::vector) AS similarity
         FROM document_chunks
+        WHERE (%(record_id)s IS NULL OR record_id = %(record_id)s)
         ORDER BY embedding <=> %(embedding)s::vector
         LIMIT %(limit)s;
         """
@@ -207,7 +210,11 @@ class VectorStoreLoader:
         with self._conn.cursor() as cur:
             cur.execute(
                 sql,
-                {"embedding": str(query_emb), "limit": top_k},
+                {
+                    "embedding": str(query_emb),
+                    "record_id": record_id,
+                    "limit": top_k,
+                },
             )
             results = cur.fetchall()
 

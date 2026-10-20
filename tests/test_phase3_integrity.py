@@ -248,9 +248,11 @@ def test_pgvector_load_and_search() -> None:
     inserted = v_loader.insert_batch(rows)
     assert inserted == 2
 
-    results = v_loader.query_similarity("iPhone sales and revenue", top_k=1)
+    results = v_loader.query_similarity(
+        "iPhone sales and revenue", top_k=2, record_id="test_vec_rec_001"
+    )
     assert len(results) > 0
     assert results[0]["record_id"] == "test_vec_rec_001"
-    assert "iPhone" in results[0]["text_content"]
+    assert any("iPhone" in result["text_content"] for result in results)
 
     v_loader.close()

@@ -43,6 +43,9 @@ Full causal-failure taxonomy and per-record states: [eval_results/benchmark_repo
 ## Quickstart (local)
 
 ```bash
+# 0. Create local configuration and replace placeholder credentials as needed
+cp .env.example .env
+
 # 1. Data pipeline (raw FinQA -> parsed -> normalized)
 python evaluation/profile_finqa_dataset.py
 python ingestion/parser.py
