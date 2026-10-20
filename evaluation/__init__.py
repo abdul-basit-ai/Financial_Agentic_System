@@ -1,7 +1,12 @@
 """Evaluation and benchmarking suite package export."""
 
 from evaluation.evaluator import EvaluationRecord, EvaluationResult, FinQAEvaluator
-from evaluation.gate import GateDecision, compute_bootstrap_ci, compute_mcnemar_test, evaluate_gate
+from evaluation.gate import (
+    GateDecision,
+    compute_bootstrap_ci,
+    compute_mcnemar_test,
+    evaluate_gate,
+)
 from evaluation.metrics import (
     canonicalize_program,
     compute_ir_metrics,

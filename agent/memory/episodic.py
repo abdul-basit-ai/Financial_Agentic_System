@@ -148,13 +148,11 @@ class EpisodicMemoryStore:
                 cur.execute("DROP INDEX IF EXISTS idx_episodic_vector")
                 conn.commit()
                 return False
-            cur.execute(
-                f"""
+            cur.execute(f"""
                 CREATE INDEX IF NOT EXISTS idx_episodic_vector
                 ON episodic_memories USING ivfflat (embedding vector_cosine_ops)
                 WITH (lists = {int(lists)});
-                """
-            )
+                """)
             conn.commit()
             return True
 

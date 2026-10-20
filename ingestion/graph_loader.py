@@ -487,14 +487,12 @@ class GraphLoader:
 
     @staticmethod
     def _link_next_year_tx(tx: Any) -> None:
-        tx.run(
-            """
+        tx.run("""
             MATCH (rw:Row)-[:HAS_VALUE]->(a:Value)
             MATCH (rw)-[:HAS_VALUE]->(b:Value)
             WHERE a.year IS NOT NULL AND b.year IS NOT NULL AND b.year = a.year + 1
             MERGE (a)-[:NEXT_YEAR]->(b)
-            """
-        )
+            """)
 
     def load_batch(self, payloads: list[dict[str, Any]]) -> GraphLoadStats:
         stats = GraphLoadStats()

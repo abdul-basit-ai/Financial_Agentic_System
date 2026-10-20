@@ -110,13 +110,11 @@ class VectorStoreLoader:
                 cur.execute("DROP INDEX IF EXISTS chunk_vector_idx")
                 self._conn.commit()
                 return False
-            cur.execute(
-                f"""
+            cur.execute(f"""
                 CREATE INDEX IF NOT EXISTS chunk_vector_idx
                 ON document_chunks USING ivfflat (embedding vector_cosine_ops)
                 WITH (lists = {int(lists)});
-                """
-            )
+                """)
             self._conn.commit()
             return True
 

@@ -17,7 +17,11 @@ import time
 from pathlib import Path
 
 from agent.sandbox.prefilter import audit_code_safety
-from agent.sandbox.protocol import ArtifactManifest, SandboxExecutionInput, SandboxOutput
+from agent.sandbox.protocol import (
+    ArtifactManifest,
+    SandboxExecutionInput,
+    SandboxOutput,
+)
 
 # Optional POSIX resource limits
 try:

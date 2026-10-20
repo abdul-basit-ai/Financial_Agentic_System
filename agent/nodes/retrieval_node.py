@@ -6,8 +6,16 @@ from typing import Any
 
 from agent.state.schema import AgentStateV1
 from agent.tools.fusion_tool import ContextFusionInput, context_fusion_tool
-from agent.tools.graph_tool import GraphMetricRecord, GraphQueryInput, graph_retrieval_tool
-from agent.tools.vector_tool import VectorChunkRecord, VectorSearchInput, vector_retrieval_tool
+from agent.tools.graph_tool import (
+    GraphMetricRecord,
+    GraphQueryInput,
+    graph_retrieval_tool,
+)
+from agent.tools.vector_tool import (
+    VectorChunkRecord,
+    VectorSearchInput,
+    vector_retrieval_tool,
+)
 
 
 def retrieve_graph_node(state: AgentStateV1) -> dict[str, Any]:
