@@ -46,7 +46,7 @@ def normalize_term(word: str) -> str:
     overwhelmingly differ by a trailing 's' (revenue/revenues,
     transaction/transactions) or an apostrophe (stockholders' / stockholders).
     """
-    w = word.strip().lower().strip(".,;:()'\"")
+    w = word.strip().lower().strip("!?.,;:()'\"")
     if len(w) > 3 and w.endswith("s") and not w.endswith("ss"):
         w = w[:-1]
     return w
@@ -67,7 +67,7 @@ def question_terms(text: str) -> set[str]:
         if not norm:
             continue
         if norm.isdigit():
-            # Years carry signal; other numbers are amounts handled elsewhere.
+
             if len(norm) == 4 and norm.startswith(("19", "20")):
                 terms.add(norm)
             continue
@@ -85,23 +85,16 @@ def best_matching_record(
     records: list[dict],
     q_terms: set[str],
 ) -> dict | None:
-    """Picks the record whose identifying text best overlaps the question terms.
-
-    Scored text spans row_label AND column_header: FinQA questions are
-    column-qualified ('average payment volume per transaction' must pick the
-    payments-volume value out of a row whose label is just the company name).
-    Falls back to the first record when nothing overlaps.
-    """
-    if not records:
+    """Return a unique positive match across row and column labels."""
+    if not records or not q_terms:
         return None
-    if not q_terms:
-        return records[0]
-
-    best: dict | None = None
-    best_score = 0
-    for rec in records:
-        scored_text = f"{rec.get('row_label', '')} {rec.get('column_header', '')}"
-        score = relevance_hits(scored_text, q_terms)
-        if score > best_score:
-            best, best_score = rec, score
-    return best if best is not None else records[0]
+    scores = [
+        relevance_hits(
+            f"{r.get('row_label', '')} {r.get('column_header', '')}", q_terms
+        )
+        for r in records
+    ]
+    top = max(scores)
+    if not top or scores.count(top) != 1:
+        return None
+    return records[scores.index(top)]

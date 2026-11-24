@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import math
 import operator
 import re
 from typing import Any
@@ -25,7 +26,6 @@ class SafeMathOutput(BaseModel):
     formatted: str = Field(..., description="Formatted string representation of result")
 
 
-# Whitelisted binary and unary operators (ast.operator / ast.unaryop types)
 SAFE_OPERATORS: dict[type[Any], Any] = {
     ast.Add: operator.add,
     ast.Sub: operator.sub,
@@ -36,7 +36,7 @@ SAFE_OPERATORS: dict[type[Any], Any] = {
     ast.UAdd: operator.pos,
 }
 
-# Whitelisted FinQA DSL functions & table aggregations
+
 SAFE_FUNCTIONS: dict[str, Any] = {
     "add": operator.add,
     "subtract": operator.sub,
@@ -56,10 +56,27 @@ SAFE_FUNCTIONS: dict[str, Any] = {
 
 MAX_AST_DEPTH = 50
 CURRENCY_STRIP_RE = re.compile(r"[\$€£¥]")
-# Thousands separators inside numeric literals only: "1,200" / "1,200,000" -> digits joined.
-# Requires digit-comma-digit grouping so argument commas in DSL calls are untouched.
-THOUSANDS_SEP_RE = re.compile(r"(?<=\d),(?=\d\d\d(?!\d))")
+
+
+_GROUPING_RE = re.compile(r"[A-Za-z_]\w*\s*\(|[()]|(?<=\d),(?=\d{3}(?!\d))")
 PERCENT_SUB_RE = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+
+
+def _normalize_grouping(expression: str) -> str:
+    calls: list[bool] = []
+
+    def replace(match: re.Match[str]) -> str:
+        token = match.group()
+        if token.endswith("("):
+            calls.append(token != "(")
+        elif token == ")":
+            if calls:
+                calls.pop()
+        elif not calls or not calls[-1]:
+            return ""
+        return token
+
+    return _GROUPING_RE.sub(replace, expression)
 
 
 class ASTSecurityError(ValueError):
@@ -73,6 +90,12 @@ class SafeMathEvaluator:
         self.max_depth = max_depth
 
     def _eval_node(self, node: ast.AST, current_depth: int = 0) -> float:
+        value = self._evaluate_node(node, current_depth)
+        if not math.isfinite(value):
+            raise ValueError("Arithmetic requires finite numbers")
+        return value
+
+    def _evaluate_node(self, node: ast.AST, current_depth: int) -> float:
         if current_depth > self.max_depth:
             raise ASTSecurityError(
                 f"Expression exceeds maximum recursion depth of {self.max_depth}"
@@ -82,7 +105,9 @@ class SafeMathEvaluator:
             return self._eval_node(node.body, current_depth + 1)
 
         if isinstance(node, ast.Constant):
-            if isinstance(node.value, (int, float)):
+            if isinstance(node.value, (int, float)) and not isinstance(
+                node.value, bool
+            ):
                 return float(node.value)
             raise ASTSecurityError(f"Unsupported constant type: {type(node.value)}")
 
@@ -108,6 +133,8 @@ class SafeMathEvaluator:
             return float(SAFE_OPERATORS[op_type](operand))
 
         if isinstance(node, ast.Call):
+            if node.keywords:
+                raise ASTSecurityError("Keyword arguments are forbidden")
             if not isinstance(node.func, ast.Name):
                 raise ASTSecurityError("Dynamic function dispatch is forbidden")
             func_name = node.func.id.lower()
@@ -128,14 +155,12 @@ class SafeMathEvaluator:
         if not clean_expr:
             raise ValueError("Empty mathematical expression")
 
-        # Strip currency characters: $100 -> 100
         clean_expr = CURRENCY_STRIP_RE.sub("", clean_expr)
 
-        # Strip thousands separators ONLY inside numeric literals ("1,200" -> "1200").
-        # Removing commas globally would break FinQA DSL calls like divide(100, 4).
-        clean_expr = THOUSANDS_SEP_RE.sub("", clean_expr)
+        if len(clean_expr) > 4096:
+            raise ASTSecurityError("Expression exceeds length limit")
+        clean_expr = _normalize_grouping(clean_expr)
 
-        # Convert percentage notation: 15% -> (15 / 100)
         clean_expr = PERCENT_SUB_RE.sub(r"(\1 / 100)", clean_expr)
 
         try:

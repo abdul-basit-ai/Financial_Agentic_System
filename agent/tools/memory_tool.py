@@ -59,8 +59,7 @@ class MemoryRetrievalTool:
             )
         except Exception as exc:
             self.episodic_store.rollback()
-            # Degrade gracefully to zero episodic context, but surface the reason
-            # (Phase 12 tracing needs this; silent swallowing hides config errors).
+
             print(
                 f"[memory_tool] episodic retrieval degraded: "
                 f"{type(exc).__name__}: {exc}",
@@ -103,8 +102,7 @@ def memory_retrieval_tool(
 ) -> ToolResult[MemoryQueryOutput]:
     """Instrumented tool entrypoint for memory retrieval."""
     if client is None:
-        # Cached process-wide singleton sharing one encoder across the
-        # episodic and procedural tiers (see agent/tools/_clients.py).
+
         from agent.tools._clients import get_memory_tool_client
 
         instance: MemoryRetrievalTool = get_memory_tool_client()

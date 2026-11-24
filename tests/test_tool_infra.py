@@ -13,6 +13,7 @@ EXPECTED_TOOLS = {
     "safe_math",
     "graph_retrieval",
     "vector_retrieval",
+    "table_extract",
     "context_fusion",
     "query_decomposition",
     "code_interpreter",
@@ -35,9 +36,8 @@ def test_export_schemas_writes_all_tools(tmp_path) -> None:
 
 def test_load_tool_schema_roundtrip(tmp_path) -> None:
     export_schemas(out_dir=str(tmp_path))
-    # load_tool_schema reads from the package SCHEMA_DIR, so export there for this check
-    export_schemas()
-    schema = load_tool_schema("safe_math")
+
+    schema = load_tool_schema("safe_math", schema_dir=str(tmp_path))
     assert schema is not None
     assert "expression" in schema["input"]["properties"]
 
@@ -60,7 +60,7 @@ def test_log_tool_result_appends_and_summarizes(tmp_path) -> None:
     metrics_path = str(tmp_path / "tool_metrics.jsonl")
 
     ok = safe_math_tool(SafeMathInput(expression="add(1, 2)"))
-    bad = safe_math_tool(SafeMathInput(expression="1/0"))  # ZeroDivisionError inside
+    bad = safe_math_tool(SafeMathInput(expression="1/0"))
 
     assert log_tool_result(ok, trace_id="trace-A", path=metrics_path)
     assert log_tool_result(bad, trace_id="trace-B", path=metrics_path)
@@ -78,7 +78,7 @@ def test_log_tool_result_appends_and_summarizes(tmp_path) -> None:
 
 
 def test_log_tool_result_fails_open(tmp_path) -> None:
-    # Unwritable directory -> logging must return False, not raise
+
     ok = safe_math_tool(SafeMathInput(expression="add(1, 2)"))
     bad_path = os.path.join(str(tmp_path), "file.txt", "nested.jsonl")
     with open(os.path.join(str(tmp_path), "file.txt"), "w") as f:

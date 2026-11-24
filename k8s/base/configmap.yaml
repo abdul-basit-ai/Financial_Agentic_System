@@ -3,8 +3,14 @@ kind: ConfigMap
 metadata:
   name: financial-agent-config
 data:
-  NEO4J_URI: "bolt://neo4j:7687"
-  REDIS_URL: "redis://redis:6379"
-  POSTGRES_HOST: "pgvector"
-  POSTGRES_PORT: "5432"
-  POSTGRES_DB: "financial_agent"
+  FINAGENT_AUTH_MODE: supabase
+  FINAGENT_EMBEDDED_WORKER: "0"
+  FINAGENT_CHECKPOINT_BACKEND: postgres
+  SUPABASE_REPORT_BUCKET: financial-reports
+  WORKER_CONCURRENCY: "2"
+  WORKER_LEASE_SECONDS: "600"
+  DOCUMENT_OCR_DPI: "240"
+  MAX_UPLOAD_BYTES: "20971520"
+  MAX_DOCUMENT_PAGES: "1000"
+  FINAGENT_ENABLE_REMOTE_TRACING: "0"
+  API_URL: http://financial-agent-api:80

@@ -5,7 +5,7 @@ metadata:
   labels:
     app: financial-agent-api
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: financial-agent-api
@@ -14,32 +14,172 @@ spec:
       labels:
         app: financial-agent-api
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: api
-          image: financial-agent-api:latest
+          image: financial-agent:latest
+          imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8000
+            - name: http
+              containerPort: 8000
           envFrom:
             - configMapRef:
                 name: financial-agent-config
             - secretRef:
                 name: financial-agent-secrets
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
           livenessProbe:
             httpGet:
               path: /health
-              port: 8000
-            initialDelaySeconds: 10
+              port: http
             periodSeconds: 30
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
-              path: /health
-              port: 8000
-            initialDelaySeconds: 5
+              path: /ready
+              port: http
             periodSeconds: 10
+            timeoutSeconds: 5
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "250m"
+              memory: 512Mi
+              cpu: 250m
             limits:
-              memory: "1Gi"
-              cpu: "1000m"
+              memory: 2Gi
+              cpu: "2"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: financial-agent-worker
+  labels:
+    app: financial-agent-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: financial-agent-worker
+  template:
+    metadata:
+      labels:
+        app: financial-agent-worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: financial-agent:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "agent.worker"]
+          envFrom:
+            - configMapRef:
+                name: financial-agent-config
+            - secretRef:
+                name: financial-agent-secrets
+          resources:
+            requests:
+              memory: 512Mi
+              cpu: 250m
+            limits:
+              memory: 2Gi
+              cpu: "2"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: financial-agent-ui
+  labels:
+    app: financial-agent-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: financial-agent-ui
+  template:
+    metadata:
+      labels:
+        app: financial-agent-ui
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: ui
+          image: financial-agent:latest
+          imagePullPolicy: IfNotPresent
+          command:
+            - streamlit
+            - run
+            - ui/app.py
+            - --server.port=8501
+            - --server.address=0.0.0.0
+          env:
+            - name: API_URL
+              value: http://financial-agent-api:80
+            - name: STREAMLIT_CONFIG_DIR
+              value: /tmp/.streamlit
+            - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+              value: "false"
+          ports:
+            - name: http
+              containerPort: 8501
+          resources:
+            requests:
+              memory: 256Mi
+              cpu: 100m
+            limits:
+              memory: 1Gi
+              cpu: "1"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi

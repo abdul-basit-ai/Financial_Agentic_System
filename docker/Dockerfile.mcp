@@ -1,23 +1,22 @@
-# MCP server image (Phase 10 / Phase 16)
-# Exposes the 7 financial tools over the Model Context Protocol (stdio/SSE).
-FROM python:3.11-slim AS builder
-
-WORKDIR /build
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir --prefix=/install .
-
 FROM python:3.11-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
 WORKDIR /app
-COPY --from=builder /install /usr/local
-COPY agent/ ./agent/
-COPY ingestion/ ./ingestion/
-COPY knowledge/ ./knowledge/
 
-ENV PYTHONUNBUFFERED=1
+RUN python -m pip install --no-cache-dir uv==0.13.9
 
-EXPOSE 8001
+COPY . /app
 
-# SSE transport for containerized serving (HTTP health-checkable);
-# stdio transport remains available via `python -m agent.mcp.server`.
-CMD ["python", "-m", "agent.mcp.server", "--transport", "sse", "--port", "8001"]
+RUN uv sync --frozen --no-dev \
+    && useradd --system --uid 10001 --create-home finagent \
+    && chown -R finagent:finagent /app
+
+ENV PATH="/app/.venv/bin:${PATH}"
+
+USER finagent
+
+CMD ["python", "-m", "agent.mcp.server"]

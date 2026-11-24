@@ -1,347 +1,214 @@
-"""Quantitative evaluation metrics engine for financial reasoning.
-
-Implements:
-1. Dynamic hybrid tolerance execution accuracy (Acc_exe) with scale equivalence.
-2. Commutative AST isomorphism canonicalization for FinQA programs (Acc_prog).
-3. Multi-hop IR metrics: Recall@K, Precision@K, MRR, and NDCG@K against gold_inds.
-"""
+"""FinQA execution values, program structure, and evidence ranking metrics."""
 
 from __future__ import annotations
 
-import ast
 import math
 import re
+from collections.abc import Callable
 from typing import Any
 
-FLOAT_REGEX = re.compile(r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+")
-COMMUTATIVE_OPS: set[str] = {"add", "multiply", "table_sum", "table_max", "table_min"}
+from ingestion.unit_normalizer import UNIT_MULTIPLIERS, parse_amount
 
-
-def parse_float_safe(val: Any) -> float | None:
-    """Safely extracts a floating-point number from numbers, strings, or currency text."""
-    if val is None:
-        return None
-    if isinstance(val, int | float):
-        return float(val)
-    s = (
-        str(val)
-        .strip()
-        .replace("$", "")
-        .replace("€", "")
-        .replace("£", "")
-        .replace(",", "")
-    )
-    if s.endswith("%"):
-        s = s[:-1].strip()
-    match = FLOAT_REGEX.search(s)
-    if match:
-        try:
-            return float(match.group(0).replace(",", ""))
-        except ValueError:
-            return None
-    return None
-
-
-def parse_answer_float(val: Any) -> float | None:
-    """Extract an answer value without mistaking explanation figures for it.
-
-    Synthesized responses commonly include years, source values, or citation
-    numbers before a final ``Answer:`` line.  When that marker is present, the
-    text after its last occurrence is authoritative; unstructured responses
-    retain the legacy first-number fallback.
-    """
-    text = str(val or "")
-    marker = text.lower().rfind("answer:")
-    if marker != -1:
-        text = text[marker + len("answer:") :]
-    return parse_float_safe(text)
-
-
-def is_numeric_match(
-    pred: Any,
-    gold: Any,
-    abs_tol: float = 1e-3,
-    rel_tol: float = 3e-2,
-) -> bool:
-    """Evaluates numerical execution accuracy with scale invariance (e.g. 0.15 vs 15%).
-
-    rel_tol=3% is a project-level calibration: loose enough to absorb rounding
-    and presentation differences across filings, strict enough that
-    wrong-value predictions (the dominant failure mode) still fail.
-    """
-    p = parse_float_safe(pred)
-    g = parse_float_safe(gold)
-
-    if p is None or g is None:
-        return False
-
-    # Check 1: Direct comparison with dynamic tolerance: max(abs_tol, rel_tol * |gold|)
-    tol = max(abs_tol, rel_tol * abs(g))
-    if abs(p - g) <= tol:
-        return True
-
-    # Check 2: Scale mismatch (percentage vs ratio: 0.15 vs 15.0)
-    if abs((p * 100.0) - g) <= max(abs_tol, rel_tol * abs(g)):
-        return True
-    if abs((p / 100.0) - g) <= max(abs_tol, rel_tol * abs(g)):
-        return True
-
-    return False
-
-
-def _canonicalize_ast_node(node: ast.AST) -> Any:
-    """Recursively converts AST nodes into canonical tuples, sorting commutative children."""
-    if isinstance(node, ast.Expression):
-        return _canonicalize_ast_node(node.body)
-
-    if isinstance(node, ast.Constant):
-        val = node.value
-        if isinstance(val, int | float):
-            return ("const", round(float(val), 6))
-        return ("const", str(val))
-
-    if isinstance(node, ast.Name):
-        # FinQA DSL encodes numeric literals as const_N ("divide(637,
-        # const_5)" = divide by 5). Canonicalize them to their literal value
-        # so a resolved-numeric program can match the gold DSL isomorphically.
-        m = re.fullmatch(r"const_(\d+(?:\.\d+)?)", node.id, re.IGNORECASE)
-        if m:
-            return ("const", round(float(m.group(1)), 6))
-        return ("name", node.id.lower())
-
-    if isinstance(node, ast.Call):
-        func_name = (
-            node.func.id.lower() if isinstance(node.func, ast.Name) else "unknown"
-        )
-        child_canonical = [_canonicalize_ast_node(arg) for arg in node.args]
-
-        if func_name in COMMUTATIVE_OPS:
-            # Sort canonicalized children to achieve permutation invariance: add(a, b) == add(b, a)
-            child_canonical = sorted(child_canonical, key=lambda x: str(x))
-
-        return ("call", func_name, tuple(child_canonical))
-
-    if isinstance(node, ast.BinOp):
-        op_map = {
-            ast.Add: "add",
-            ast.Mult: "multiply",
-            ast.Sub: "subtract",
-            ast.Div: "divide",
-            ast.Pow: "exp",
-        }
-        op_type = type(node.op)
-        func_name = op_map.get(op_type, op_type.__name__.lower())
-        left = _canonicalize_ast_node(node.left)
-        right = _canonicalize_ast_node(node.right)
-        children = [left, right]
-        if func_name in COMMUTATIVE_OPS:
-            children = sorted(children, key=lambda x: str(x))
-        return ("call", func_name, tuple(children))
-
-    if isinstance(node, ast.UnaryOp):
-        op_name = "neg" if isinstance(node.op, ast.USub) else "pos"
-        return ("unary", op_name, _canonicalize_ast_node(node.operand))
-
-    return ("raw", ast.dump(node))
-
-
-def canonicalize_program(prog_str: str) -> Any:
-    """Parses and canonicalizes a FinQA DSL program string into an isomorphism tuple."""
-    clean_prog = prog_str.strip().replace(",", ", ").replace(";", "")
-    clean_prog = re.sub(r"\s+", " ", clean_prog)
-    try:
-        tree = ast.parse(clean_prog, mode="eval")
-        return _canonicalize_ast_node(tree)
-    except SyntaxError:
-        # Fallback string normalization if not valid Python syntax
-        return ("fallback", clean_prog.lower())
-
-
-def is_program_match(pred_prog: str, gold_prog: str) -> bool:
-    """Checks if predicted program is isomorphic to gold program under commutativity."""
-    if not pred_prog or not gold_prog:
-        return False
-    canon_pred = canonicalize_program(pred_prog)
-    canon_gold = canonicalize_program(gold_prog)
-    return bool(canon_pred == canon_gold)
-
-
-def compute_ir_metrics(
-    retrieved_items: list[str],
-    gold_items: list[str] | set[str],
-    k: int = 5,
-) -> dict[str, float]:
-    """Calculates multi-hop information retrieval ranking metrics.
-
-    ID-space variant: compares retrieved identifier strings against gold
-    identifier strings for exact membership. Only meaningful when both sides
-    share one ID vocabulary; FinQA gold_inds keys (table_N / text_M) do NOT
-    match runtime row labels or chunk keys, so prefer compute_ir_metrics_content
-    for benchmark runs over real data.
-    """
-    gold_set = {g.strip().lower() for g in gold_items if g.strip()}
-    if not gold_set:
-        # Records without gold evidence cannot be graded; returning the
-        # neutral 1.0 convention keeps them from dragging means down, but
-        # analysis should exclude them explicitly.
-        return {"recall_at_k": 1.0, "precision_at_k": 1.0, "mrr": 1.0, "ndcg_at_k": 1.0}
-
-    k_retrieved = [r.strip().lower() for r in retrieved_items[:k]]
-
-    hits = sum(1 for item in k_retrieved if item in gold_set)
-    recall = hits / len(gold_set)
-    precision = hits / max(1, len(k_retrieved))
-
-    # Mean Reciprocal Rank
-    mrr = 0.0
-    for idx, item in enumerate(k_retrieved, start=1):
-        if item in gold_set:
-            mrr = 1.0 / idx
-            break
-
-    # Normalized Discounted Cumulative Gain (NDCG)
-    dcg = 0.0
-    for idx, item in enumerate(k_retrieved, start=1):
-        if item in gold_set:
-            dcg += 1.0 / math.log2(idx + 1)
-
-    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, min(k, len(gold_set)) + 1))
-    ndcg = (dcg / idcg) if idcg > 0.0 else 0.0
-
-    return {
-        "recall_at_k": round(recall, 4),
-        "precision_at_k": round(precision, 4),
-        "mrr": round(mrr, 4),
-        "ndcg_at_k": round(ndcg, 4),
-    }
-
-
-# =====================================================================
-# Content-based IR metrics (real FinQA gold_inds format)
-# =====================================================================
-# FinQA gold_indices maps IDs like "table_3" / "text_34" to the HUMAN-READABLE
-# evidence string they reference ("... payments volume ( billions ) is 637 ...").
-# Runtime retrieval produces row labels + amounts and raw chunk text — a
-# different ID vocabulary entirely, so exact key comparison is always zero.
-# The content variant grades each gold evidence string by token overlap with
-# retrieved text instead.
-
-_EVIDENCE_STOPWORDS = frozenset(
-    {
-        "the",
-        "a",
-        "an",
-        "of",
-        "is",
-        "was",
-        "were",
-        "in",
-        "for",
-        "and",
-        "to",
-        "at",
-        "on",
-        "by",
-        "with",
-        "as",
-        "it",
-        "its",
-        "s",
-    }
+_NUMBER = r"[-+]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)(?:[eE][-+]?\d+)?"
+_SCALE = r"(?:\s+(?:thousands?|millions?|billions?|trillions?))?"
+_FINANCIAL_TOKEN = re.compile(
+    rf"(?<!\w)(?:[$€£¥]\s*)?(?:\(\s*{_NUMBER}\s*%?{_SCALE}\s*\)\s*%?|{_NUMBER}\s*%?{_SCALE})(?!\w)",
+    re.I,
+)
+_CITATION = re.compile(r"\[[^\[\]\r\n]+\]")
+_ANSWER_MARKER = re.compile(r"\banswer\s*:", re.I)
+_ABSTENTION = re.compile(
+    r"\b(?:cannot|can.t|unable|insufficient|unknown|abstain)\b", re.I
+)
+_STOP_WORDS = frozenset(
+    "the a an of is was were in for and to at on by with as it its s".split()
 )
 
 
-def evidence_tokens(text: str) -> tuple[set[str], set[str]]:
-    """Splits text into (numeric_tokens, content_word_tokens) for overlap scoring.
+def parse_float_safe(value: Any) -> float | None:
+    """Parse a single literal amount without accepting surrounding prose."""
+    amount, _, _ = parse_amount(value)
+    return amount
 
-    Numbers are significant in financial evidence (an amount match is strong
-    signal), so they are tracked separately from words.
-    """
-    raw = re.findall(r"[a-z0-9]+(?:\.[a-z0-9]+)?", str(text).lower())
-    numbers: set[str] = set()
-    words: set[str] = set()
-    for tok in raw:
-        if any(ch.isdigit() for ch in tok):
-            # Strip trailing ".0" float noise so 637.0 matches gold 637
-            numbers.add(tok.rstrip("0").rstrip(".") if "." in tok else tok)
-        elif len(tok) > 2 and tok not in _EVIDENCE_STOPWORDS:
-            words.add(tok)
+
+def _answer_literal(value: Any) -> tuple[float | str | None, bool, str | None]:
+    if value is None or isinstance(value, bool):
+        return None, False, None
+    if isinstance(value, int | float):
+        return parse_amount(value)
+
+    text = _CITATION.sub("", str(value)).strip()
+    markers = list(_ANSWER_MARKER.finditer(text))
+    if markers:
+        text = text[markers[-1].end() :].strip().split("\n", 1)[0]
+    text = text.strip().strip("*`").rstrip(".").strip()
+    text = re.sub(r"\s+\(percent\)$", "%", text, flags=re.I)
+    if _ABSTENTION.search(text):
+        return None, False, None
+    if text.lower() in {"yes", "no"}:
+        return text.lower(), False, None
+    parsed = parse_amount(text)
+    if parsed[0] is not None:
+        return parsed
+
+    tokens = list(_FINANCIAL_TOKEN.finditer(text))
+    if len(tokens) == 1 and tokens[0].end() == len(text):
+        return parse_amount(tokens[0].group())
+    return None, False, None
+
+
+def parse_answer_value(value: Any) -> float | str | None:
+    """Read the displayed final answer, converting an explicit percentage to a fraction."""
+    amount, percentage, scale = _answer_literal(value)
+    if isinstance(amount, float):
+        if percentage:
+            return amount / 100.0
+        if scale is not None:
+            return amount * UNIT_MULTIPLIERS[scale]
+    return amount
+
+
+def parse_answer_float(value: Any) -> float | None:
+    pred = parse_answer_value(value)
+    return pred if isinstance(pred, float) else None
+
+
+def execution_value(value: Any) -> float | str | None:
+    if isinstance(value, str) and value.strip().lower() in {"yes", "no"}:
+        return value.strip().lower()
+    amount, percentage, scale = parse_amount(value)
+    if amount is None:
+        return None
+    if percentage:
+        return amount / 100.0
+    return amount * UNIT_MULTIPLIERS.get(scale or "", 1.0)
+
+
+def is_numeric_match(pred: Any, gold: Any) -> bool:
+    """Match the FinQA evaluator's five-decimal execution result against its gold value."""
+    predicted = execution_value(pred)
+    expected = execution_value(gold)
+    if isinstance(predicted, float) and isinstance(expected, float):
+        return (
+            math.isfinite(predicted)
+            and math.isfinite(expected)
+            and round(predicted, 5) == expected
+        )
+    return isinstance(predicted, str) and predicted == expected
+
+
+def is_display_match(
+    pred: Any, gold: Any, *, abs_tol: float = 0.0, rel_tol: float = 0.0
+) -> bool:
+    """Optional display score against the dataset's presentation answer."""
+    predicted, pct_pred, scale_pred = _answer_literal(pred)
+    expected, pct_gold, scale_gold = _answer_literal(gold)
+    if pct_pred != pct_gold:
+        return False
+    if isinstance(predicted, float) and isinstance(expected, float):
+        p = predicted * UNIT_MULTIPLIERS.get(scale_pred or "", 1.0)
+        g = expected * UNIT_MULTIPLIERS.get(scale_gold or "", 1.0)
+        return math.isclose(p, g, abs_tol=abs_tol, rel_tol=rel_tol)
+    return isinstance(predicted, str) and predicted == expected
+
+
+def evidence_tokens(
+    text: str,
+) -> tuple[list[tuple[float, bool, str | None]], list[str]]:
+    normalized = str(text).lower().replace("\u2212", "-")
+    numbers = []
+    for match in _FINANCIAL_TOKEN.finditer(normalized):
+        value, pct, scale = parse_amount(match.group().strip())
+        if value is not None:
+            numbers.append((value, pct, scale))
+    words = [
+        token
+        for token in re.findall(r"[a-z]+", _FINANCIAL_TOKEN.sub(" ", normalized))
+        if token not in _STOP_WORDS
+    ]
     return numbers, words
 
 
 def evidence_hit(gold_text: str, retrieved_text: str) -> bool:
-    """Whether a retrieved text covers a gold evidence string.
+    """Require the full gold numeric sequence and its significant words."""
+    gold_numbers, gold_words = evidence_tokens(gold_text)
+    retrieved_numbers, retrieved_words = evidence_tokens(retrieved_text)
+    remaining = iter(retrieved_numbers)
+    return (
+        bool(gold_numbers or gold_words)
+        and all(number in remaining for number in gold_numbers)
+        and set(gold_words).issubset(retrieved_words)
+    )
 
-    Rule: a hit requires sharing at least one significant token of each kind
-    the gold string carries — numbers (if any) and content words. A gold
-    string without numbers (pure narrative) needs one content-word overlap.
-    """
-    g_num, g_words = evidence_tokens(gold_text)
-    r_num, r_words = evidence_tokens(retrieved_text)
 
-    number_ok = (not g_num) or bool(g_num & r_num)
-    word_ok = (not g_words) or bool(g_words & r_words)
-    # Pure-number gold (e.g. a lone value) still needs the number itself.
-    return number_ok and word_ok and bool(g_num or (g_words & r_words))
+def ranked_metrics(
+    hits_by_rank: list[set[int]], gold_count: int, k: int
+) -> dict[str, float]:
+    if not gold_count:
+        return {"recall_at_k": 1.0, "precision_at_k": 1.0, "mrr": 1.0, "ndcg_at_k": 1.0}
+
+    covered: set[int] = set()
+    reciprocal_rank = 0.0
+    dcg = 0.0
+    relevant = 0
+    top_k = hits_by_rank[:k]
+    for rank, hits in enumerate(top_k, start=1):
+        if hits - covered:
+            covered.update(hits)
+            relevant += 1
+            reciprocal_rank = reciprocal_rank or (1.0 / rank)
+            dcg += 1.0 / math.log2(rank + 1)
+    idcg = sum(1.0 / math.log2(rank + 1) for rank in range(1, min(k, gold_count) + 1))
+    return {
+        "recall_at_k": round(len(covered) / gold_count, 4),
+        "precision_at_k": round(relevant / max(1, len(top_k)), 4),
+        "mrr": round(reciprocal_rank, 4),
+        "ndcg_at_k": round(dcg / idcg, 4) if idcg else 0.0,
+    }
+
+
+def _content_metrics(
+    retrieved: list[str],
+    gold: list[str] | set[str],
+    k: int,
+    match: Callable[[str, str], bool],
+) -> dict[str, float]:
+    gold_items = list(
+        dict.fromkeys(item.strip().lower() for item in gold if item.strip())
+    )
+    hits_by_rank = [
+        {
+            index
+            for index, gold_item in enumerate(gold_items)
+            if match(gold_item, retrieved_item)
+        }
+        for retrieved_item in retrieved[:k]
+    ]
+    return ranked_metrics(hits_by_rank, len(gold_items), k)
+
+
+def compute_ir_metrics(
+    retrieved_items: list[str], gold_items: list[str] | set[str], k: int = 5
+) -> dict[str, float]:
+    return _content_metrics(
+        retrieved_items, gold_items, k, lambda gold, item: gold == item.strip().lower()
+    )
 
 
 def compute_ir_metrics_content(
-    retrieved_texts: list[str],
-    gold_texts: list[str] | set[str],
-    k: int = 5,
+    retrieved_texts: list[str], gold_texts: list[str] | set[str], k: int = 5
 ) -> dict[str, float]:
-    """IR metrics graded by content overlap instead of identifier equality.
+    return _content_metrics(retrieved_texts, gold_texts, k, evidence_hit)
 
-    A retrieved item is *relevant* if it covers at least one gold evidence
-    string (evidence_hit). Recall is over gold items covered by the top-k;
-    precision over top-k items that are relevant; MRR/NDCG use the first/
-    graded relevant positions.
-    """
-    gold_list = [g for g in gold_texts if str(g).strip()]
-    if not gold_list:
-        # Same neutral convention as compute_ir_metrics for missing gold.
-        return {"recall_at_k": 1.0, "precision_at_k": 1.0, "mrr": 1.0, "ndcg_at_k": 1.0}
 
-    top_k = [str(t) for t in retrieved_texts[:k] if str(t).strip()]
+def is_program_match(pred_prog: str, gold_prog: str) -> bool:
+    from evaluation.finqa_program import canonicalize_program
 
-    # Binary relevance of each retrieved slot: covers any gold evidence?
-    relevance: list[bool] = [any(evidence_hit(g, t) for g in gold_list) for t in top_k]
+    predicted = canonicalize_program(pred_prog)
+    return predicted is not None and predicted == canonicalize_program(gold_prog)
 
-    # Recall: fraction of gold items covered by ANY top-k retrieval
-    covered = 0
-    for g in gold_list:
-        if any(evidence_hit(g, t) for t in top_k):
-            covered += 1
-    recall = covered / len(gold_list)
 
-    precision = sum(relevance) / max(1, len(top_k))
+def canonicalize_program(prog_str: str) -> Any:
+    from evaluation.finqa_program import canonicalize_program as canonicalize
 
-    mrr = 0.0
-    for idx, rel in enumerate(relevance, start=1):
-        if rel:
-            mrr = 1.0 / idx
-            break
-
-    # NDCG with per-gold credit: once a gold item is covered by an earlier
-    # (higher-ranked) slot, later slots covering the SAME gold item add no
-    # further gain — without this, duplicates inflate DCG above IDCG (>1.0).
-    dcg = 0.0
-    credited: set[int] = set()
-    for idx, text in enumerate(top_k, start=1):
-        for g_idx, g in enumerate(gold_list):
-            if g_idx in credited:
-                continue
-            if evidence_hit(g, text):
-                dcg += 1.0 / math.log2(idx + 1)
-                credited.add(g_idx)
-                break
-
-    idcg = sum(1.0 / math.log2(i + 1) for i in range(1, min(k, len(gold_list)) + 1))
-    ndcg = (dcg / idcg) if idcg > 0.0 else 0.0
-
-    return {
-        "recall_at_k": round(recall, 4),
-        "precision_at_k": round(precision, 4),
-        "mrr": round(mrr, 4),
-        "ndcg_at_k": round(ndcg, 4),
-    }
+    return canonicalize(prog_str)

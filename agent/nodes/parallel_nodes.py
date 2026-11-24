@@ -4,13 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-try:
-    from langgraph.types import Send
-except ImportError:  # pragma: no cover - version shims for very old langgraph
-    try:
-        from langgraph.constants import Send  # type: ignore[no-redef]
-    except ImportError:  # type: ignore[no-redef]
-        from langgraph.graph import Send  # type: ignore[attr-defined,no-redef]
+from langgraph.types import Send
+from pydantic import ValidationError
+from typing_extensions import TypedDict
 
 from agent.nodes.concurrency import ToolSlot
 from agent.state.schema import AgentStateV1
@@ -20,166 +16,86 @@ from agent.tools.table_tool import TableExtractInput, table_extract_tool
 from agent.tools.vector_tool import VectorSearchInput, vector_retrieval_tool
 
 
-def sub_task_worker(payload: dict[str, Any]) -> dict[str, Any]:
+class WorkerPayload(TypedDict):
+    task_id: str
+    target_tool: str
+    payload: dict[str, Any]
+
+
+def sub_task_worker(state: WorkerPayload) -> dict[str, Any]:
+    payload = state
+    try:
+        return _execute_worker(dict(payload))
+    except (ValidationError, TypeError, ValueError, KeyError) as exc:
+        task_id = payload.get("task_id", "task_unknown")
+        envelope = {
+            "task_id": task_id,
+            "tool_name": payload.get("target_tool"),
+            "success": False,
+            "data": None,
+            "error": f"Invalid tool input: {type(exc).__name__}",
+        }
+        return {
+            "tool_results": [envelope],
+            "sub_task_results": {task_id: envelope},
+            "scratchpad": [f"[Parallel Worker: {task_id}] Invalid tool input"],
+        }
+
+
+def _execute_worker(payload: dict[str, Any]) -> dict[str, Any]:
     """Isolated worker node executing a single SubTask dispatched via Send API.
 
     Concurrency is bounded per-tool via the ToolSlot semaphore registry
     (agent.nodes.concurrency) — parallel Send branches queue rather than
     overwhelming downstream stores; wait/contention is logged for Phase 12.
     """
-    task_id = payload.get("task_id", "task_unknown")
-    target_tool = payload.get("target_tool")
-    tool_payload = payload.get("payload", {})
-
-    result_data: Any = None
-    query_input: Any = None
-    res: Any = None
-    success = False
-    error_msg: str | None = None
-    log_entry = ""
-
-    if target_tool not in {
-        "graph_retrieval",
-        "vector_retrieval",
-        "safe_math",
-        "table_extract",
-    }:
-        error_msg = f"Unsupported tool '{target_tool}' in sub_task_worker"
-        log_entry = f"[Parallel Worker: {task_id}] Failed: {error_msg}"
-        return {
-            "sub_task_results": {
-                task_id: {
-                    "task_id": task_id,
-                    "tool_name": target_tool,
-                    "success": False,
-                    "data": None,
-                    "error": error_msg,
-                }
-            },
-            "tool_results": [
-                {
-                    "task_id": task_id,
-                    "tool_name": target_tool,
-                    "success": False,
-                    "data": None,
-                    "error": error_msg,
-                }
-            ],
-            "scratchpad": [log_entry],
-        }
-
-    with ToolSlot(target_tool) as slot:
-        if slot.status == "timeout":
-            # Hard backpressure: fail the task rather than execute unbounded.
-            error_msg = (
-                f"Concurrency limit timeout for '{target_tool}' after "
-                f"{slot.wait_seconds:.1f}s of queuing"
-            )
-            log_entry = f"[Parallel Worker: {task_id}] Rejected: {error_msg}"
-            envelope = {
-                "task_id": task_id,
-                "tool_name": target_tool,
-                "success": False,
-                "data": None,
-                "error": error_msg,
-            }
-            return {
-                "sub_task_results": {task_id: envelope},
-                "tool_results": [envelope],
-                "scratchpad": [log_entry],
-            }
-
-        contention_note = ""
-        if slot.status == "waited":
-            contention_note = f" (queued {slot.wait_seconds:.2f}s for slot)"
-
-        if target_tool == "graph_retrieval":
-            query_input = GraphQueryInput(
-                company_identifier=tool_payload.get("company_identifier", "UNKNOWN"),
-                metric_name=tool_payload.get("metric_name"),
-                year=tool_payload.get("year"),
-                record_id=tool_payload.get("record_id"),
-            )
-            res = graph_retrieval_tool(query_input)
-            success = res.success
-            result_data = res.data.model_dump() if res.data else None
-            error_msg = res.error
-            count = res.data.total_found if res.data else 0
-            log_entry = f"[Parallel Worker: {task_id}] Graph retrieved {count} records.{contention_note}"
-
-        elif target_tool == "vector_retrieval":
-            # Record anchoring, stage 1: restrict semantic search to the
-            # anchored filing when known (planner injected it), else to the
-            # company's own filings so the top chunk identifies the filing
-            # the question is actually about (fan_out_router forwards that
-            # record_id into the dependent graph_retrieval payloads).
-            company = tool_payload.get("company_identifier")
-            record_id = tool_payload.get("record_id")
-            record_ids = None
-            company_is_real = company and str(company).strip().upper() not in {
-                "UNKNOWN",
-                "N/A",
-                "",
-            }
-            if not record_id and company_is_real:
-                from agent.tools.graph_tool import list_company_record_ids
-
-                # CRITICAL: keep an empty list as-is. `or None` would turn
-                # 'company has zero filings in the corpus' into an UNSCOPED
-                # search, leaking unrelated companies' chunks into synthesis
-                # (observed: AMZN question answered with MSI filing text).
-                # Empty list = correctly empty result.
-                ids = list_company_record_ids(company)
-                record_ids = ids if ids is not None else None
-                if ids is not None and len(ids) == 0:
-                    record_ids = []
-            query_input = VectorSearchInput(
-                query_text=tool_payload.get("query_text", ""),
-                top_k=tool_payload.get("top_k", 5),
-                record_id=record_id,
-                record_ids=record_ids,
-            )
-            res = vector_retrieval_tool(query_input)
-            success = res.success
-            result_data = res.data.model_dump() if res.data else None
-            error_msg = res.error
-            count = res.data.total_found if res.data else 0
-            scope_note = " (company-scoped)" if record_ids else ""
-            log_entry = f"[Parallel Worker: {task_id}] Vector retrieved {count} chunks{scope_note}.{contention_note}"
-
-        elif target_tool == "table_extract":
-            query_input = TableExtractInput(record_id=tool_payload.get("record_id", ""))
-            res = table_extract_tool(query_input)
-            success = res.success
-            result_data = res.data.model_dump() if res.data else None
-            error_msg = res.error
-            count = res.data.total_values if res.data else 0
-            log_entry = (
-                f"[Parallel Worker: {task_id}] Table extracted "
-                f"{count} values.{contention_note}"
-            )
-
-        elif target_tool == "safe_math":
-            raw_expr = tool_payload.get("expression", "0")
-            res = safe_math_tool(SafeMathInput(expression=raw_expr))
-            success = res.success
-            result_data = res.data.model_dump() if res.data else None
-            error_msg = res.error
-            val = res.data.formatted if res.data else "ERROR"
-            log_entry = f"[Parallel Worker: {task_id}] Math calculated '{raw_expr}' -> {val}{contention_note}"
-
-    envelope = {
+    task_id = payload["task_id"]
+    tool_name = payload["target_tool"]
+    arguments = payload["payload"]
+    envelope: dict[str, Any] = {
         "task_id": task_id,
-        "tool_name": target_tool,
-        "success": success,
-        "data": result_data,
-        "error": error_msg,
+        "tool_name": tool_name,
+        "success": False,
+        "data": None,
+        "error": None,
     }
-
+    with ToolSlot(tool_name) as slot:
+        if slot.status == "timeout":
+            envelope["error"] = f"Concurrency limit timeout for '{tool_name}'"
+        else:
+            result: Any
+            if tool_name == "graph_retrieval":
+                result = graph_retrieval_tool(
+                    GraphQueryInput.model_validate(arguments, strict=True)
+                )
+            elif tool_name == "vector_retrieval":
+                result = vector_retrieval_tool(
+                    VectorSearchInput.model_validate(arguments, strict=True)
+                )
+            elif tool_name == "table_extract":
+                result = table_extract_tool(
+                    TableExtractInput.model_validate(arguments, strict=True)
+                )
+            elif tool_name == "safe_math":
+                result = safe_math_tool(
+                    SafeMathInput.model_validate(arguments, strict=True)
+                )
+            else:
+                raise ValueError("Unsupported tool")
+            envelope.update(
+                success=result.success,
+                data=result.data.model_dump() if result.data else None,
+                error=result.error,
+                metrics={
+                    **result.metrics.model_dump(),
+                    "wait_seconds": slot.wait_seconds,
+                },
+            )
+    log = envelope["error"] or "Completed"
     return {
         "sub_task_results": {task_id: envelope},
         "tool_results": [envelope],
-        "scratchpad": [log_entry],
+        "scratchpad": [f"[Parallel Worker: {task_id}] {tool_name}: {log}"],
     }
 
 
@@ -206,13 +122,21 @@ def _anchor_record_id(state: AgentStateV1, deps: list[str]) -> str | None:
         chunks = (env.get("data") or {}).get("chunks") or []
         if not chunks:
             continue
-        if year_tokens:
-            for ch in chunks:
-                text = str(ch.get("text_content", ""))
-                if any(y in text for y in year_tokens) and ch.get("record_id"):
-                    return str(ch["record_id"])
-        if chunks[0].get("record_id"):
-            return str(chunks[0]["record_id"])
+        dated = [
+            ch
+            for ch in chunks
+            if any(y in str(ch.get("text_content", "")) for y in year_tokens)
+        ]
+        candidates = [ch for ch in dated or chunks if ch.get("record_id")]
+        if candidates:
+            top_score = max(ch.get("similarity_score", 0) for ch in candidates)
+            ids = {
+                str(ch["record_id"])
+                for ch in candidates
+                if ch.get("similarity_score", 0) == top_score
+            }
+            if len(ids) == 1:
+                return ids.pop()
     return None
 
 
@@ -223,9 +147,9 @@ def fan_out_router(state: AgentStateV1) -> list[Send] | str:
     for call in state.tool_calls:
         if call.get("status") == "PENDING":
             deps = call.get("dependencies", [])
-            # Ready if all dependencies exist in sub_task_results
+
             if not deps or all(d in state.sub_task_results for d in deps):
-                # Only fan out retrieval tasks (math is routed to compute)
+
                 if call.get("target_tool") in {
                     "graph_retrieval",
                     "vector_retrieval",
@@ -240,8 +164,7 @@ def fan_out_router(state: AgentStateV1) -> list[Send] | str:
             if t.get("target_tool") == "graph_retrieval" and not payload.get(
                 "record_id"
             ):
-                # Explicit caller anchor wins; vector-top-1 heuristic is the
-                # fallback for free-form queries with no known filing.
+
                 anchor = state.record_id or _anchor_record_id(
                     state, t.get("dependencies", [])
                 )
@@ -259,19 +182,7 @@ def fan_out_router(state: AgentStateV1) -> list[Send] | str:
             )
         return sends
 
-    # Check if a safe_math task is ready
-    has_pending_math = any(
-        c.get("target_tool") == "safe_math" and c.get("status") == "PENDING"
-        for c in state.tool_calls
-    )
-    if has_pending_math:
-        return "compute"
-
-    # Default routing if no tasks to fan out
-    if state.tool_results:
-        return "fuse_context"
-
-    return "synthesize_answer"
+    return "fuse_context"
 
 
 def fan_out_router_node(state: AgentStateV1) -> dict[str, Any]:

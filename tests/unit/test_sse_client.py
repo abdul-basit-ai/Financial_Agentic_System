@@ -25,8 +25,23 @@ class _FakeResponse:
 
 def test_stream_parser_flushes_final_event_without_blank_line(monkeypatch: Any) -> None:
     response = _FakeResponse([b"event: complete", b'data: {"status": "FINISHED"}'])
-    monkeypatch.setattr("ui.sse_client.requests.post", lambda *a, **k: response)
+    captured: dict[str, Any] = {}
 
-    events = list(stream_sse_query("http://api:8000", {"query": "Revenue?"}))
+    def post(*args: Any, **kwargs: Any) -> _FakeResponse:
+        captured.update(kwargs)
+        return response
+
+    monkeypatch.setattr("ui.sse_client.requests.post", post)
+
+    events = list(
+        stream_sse_query(
+            "http://api:8000",
+            {"query": "Revenue?"},
+            headers={"Authorization": "Bearer user-token"},
+        )
+    )
 
     assert events == [{"event": "complete", "data": {"status": "FINISHED"}}]
+    assert captured["headers"]["Authorization"] == "Bearer user-token"
+    assert captured["headers"]["Accept"] == "text/event-stream"
+    assert captured["timeout"] == (5.0, 180.0)

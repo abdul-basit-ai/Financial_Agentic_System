@@ -20,10 +20,6 @@ from ingestion.table_parser import parse_table_structure
 from ingestion.text_chunker import chunk_context
 from knowledge.vector_store.loader import VectorStoreLoader
 
-# =====================================================================
-# Unit Validations (Zero DB Dependency)
-# =====================================================================
-
 
 def test_table_parser_preserves_currency_and_negative_rows() -> None:
     raw_table = [
@@ -62,12 +58,11 @@ def test_entity_extractor_captures_valid_company_tickers() -> None:
 
 
 def test_metric_matching_prevents_false_positives() -> None:
-    # Exact and bounded phrases match
+
     assert _match_metric("revenue", "Total revenue")
     assert _match_metric("operating_income", "Operating income (loss)")
     assert _match_metric("tax", "Income tax expense")
 
-    # Partial-word and reverse substring inclusions must NOT match
     assert not _match_metric("tax", "Pretax income")
     assert not _match_metric("other operating expenses", "Other")
     assert not _match_metric("net", "Internet services")
@@ -125,11 +120,6 @@ def test_text_chunker_overlapping_windows() -> None:
     assert chunks[1]["end_sentence"] == 4
 
 
-# =====================================================================
-# Database Integration Tests (Requires Running Compose Services)
-# =====================================================================
-
-
 @pytest.mark.integration
 def test_neo4j_batch_load_and_integrity() -> None:
     uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
@@ -139,7 +129,7 @@ def test_neo4j_batch_load_and_integrity() -> None:
     loader = GraphLoader(uri=uri, user=user, password=password)
     try:
         loader.connect()
-        # Verify connection is actually alive (driver() is lazy)
+
         loader._driver.verify_connectivity()
     except Exception as exc:
         pytest.skip(f"Neo4j container not available: {exc}")
@@ -183,9 +173,6 @@ def test_neo4j_batch_load_and_integrity() -> None:
     assert integrity["orphans_rows_without_table"] == 0
     assert integrity["orphans_tables_without_report"] == 0
 
-    # Teardown: remove the fixture rows so the shared local graph is never
-    # polluted with test data between runs (they would otherwise surface as
-    # "verified evidence" in live benchmark/UI queries).
     try:
         with loader._driver.session(database="neo4j") as session:
             session.run(
@@ -201,7 +188,7 @@ def test_neo4j_batch_load_and_integrity() -> None:
                 "MATCH (c:Company) WHERE c.id = 'company::amzn' AND NOT EXISTS { (c)-[:FILED]->(:Report) } DETACH DELETE c"
             ).consume()
     except Exception:
-        pass  # teardown is best-effort; assert results are already checked
+        pass
 
     loader.close()
 

@@ -1,66 +1,58 @@
 [build-system]
-requires = ["setuptools>=83.0", "wheel"]
+requires = ["setuptools>=84.2,<85", "wheel>=0.45,<1"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "financial-agent"
 version = "0.1.0"
-description = "Autonomous Financial Reasoning Agent using Knowledge Graphs and LLMs"
+description = "Evidence-grounded financial filing research workspace"
 authors = [{ name = "Financial Agent Team", email = "dev@financial-agent.local" }]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
-    "langchain>=0.2",
-    "langchain-openai>=0.1",
-    "langgraph>=0.1",
-    "langgraph-checkpoint-redis>=0.3",
-    "mcp>=1.2.0,<2.0",
-    "neo4j>=5.0",
-    "pandas>=2.0",
-    "fastapi>=0.111",
-    "uvicorn[standard]>=0.29",
-    "streamlit>=1.35",
-    "redis>=5.0",
-    "psycopg2-binary>=2.9",
-    "pgvector>=0.2",
-    "python-dotenv>=1.0",
-    "pydantic>=2.0",
-    "requests>=2.31",
-    "urllib3>=2.8.0",
-    "PyJWT>=2.15.0",
+    "fastapi>=0.115,<1",
+    "langchain>=1.4,<2",
+    "langchain-openai>=1.6,<2",
+    "langgraph>=1.2,<2",
+    "langgraph-checkpoint-postgres==3.2.1",
+    "langgraph-checkpoint-redis>=0.3,<1",
+    "langgraph-checkpoint-sqlite==3.1.3",
+    "mcp>=1.2,<2",
+    "neo4j>=6.3.1,<7",
+    "pandas>=2.2,<4",
+    "pgvector>=0.3,<1",
+    "psycopg[binary,pool]==3.3.9",
+    "psycopg2-binary>=2.9.10,<3",
+    "pydantic>=2.7,<3",
+    "PyJWT>=2.15,<3",
+    "PyMuPDF==1.28.2",
+    "python-dotenv>=1,<2",
+    "python-multipart>=0.0.32,<1",
+    "redis>=8.1,<9",
+    "requests>=2.32,<3",
+    "streamlit>=1.40,<2",
+    "urllib3>=2.8,<3",
+    "uvicorn[standard]>=0.30,<1",
 ]
 
 [project.optional-dependencies]
-embeddings = [
-    "sentence-transformers>=5.6,<6.0",
-    "transformers>=5.10,<6.0",
-]
 dev = [
-    "setuptools>=83.0",
-    "black>=24.0",
-    "pytest>=8.0",
-    "pytest-asyncio>=0.23",
-    "ruff>=0.4",
-    "mypy>=1.10",
-    "types-psycopg2>=2.9",
-    "isort>=5.13",
-    "pre-commit>=3.7",
-    "pip-audit>=2.7",
-    "virtualenv>=21.7.13",
+    "black>=24.10,<27",
+    "mypy>=2.3,<3",
+    "pip-audit>=2.7,<3",
+    "pre-commit>=3.7,<5",
+    "pytest>=8,<10",
+    "pytest-asyncio>=0.23,<2",
+    "ruff>=0.4,<1",
+    "types-psycopg2>=2.9,<3",
+]
+embeddings = [
+    "sentence-transformers>=5.6,<6",
+    "transformers>=5.10,<6",
 ]
 mlops = [
-    "mlflow>=2.13",
-    "dvc[s3]>=3.50",
-]
-
-[tool.poetry]
-packages = [
-    { include = "agent" },
-    { include = "api" },
-    { include = "ingestion" },
-    { include = "knowledge" },
-    { include = "evaluation" },
-    { include = "observability" }
+    "dvc[s3]>=3.50,<4",
+    "mlflow>=2.13,<4",
 ]
 
 [tool.setuptools.packages.find]
@@ -73,37 +65,22 @@ include = [
     "observability*",
     "ui*",
 ]
+exclude = ["tmp*", "tests*", "data*", "infra*", "k8s*", "build*", "dist*"]
 
-[tool.poetry.group.dev.dependencies]
-setuptools = ">=83.0"
-black = ">=24.0"
-pytest = ">=8.0"
-pytest-asyncio = ">=0.23"
-ruff = ">=0.4"
-mypy = ">=1.10"
-isort = ">=5.13"
-pre-commit = ">=3.7"
-pip-audit = ">=2.7"
-virtualenv = ">=21.7.13"
+[tool.setuptools.package-data]
+agent = ["prompts/*.txt", "prompts/*.json", "tools/schemas/*.json"]
+ui = ["*.css", "*.md"]
 
-[tool.poetry.group.mlops.dependencies]
-mlflow = ">=2.13"
-dvc = {extras = ["s3"], version = ">=3.50"}
-
-[[tool.mypy.overrides]]
-module = "sentence_transformers.*"
-ignore_missing_imports = true
+[tool.black]
+line-length = 88
+target-version = ["py311"]
 
 [tool.ruff]
 target-version = "py311"
-line-length = 100
+line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]
-# E501 is deliberately not gated: the codebase legitimately carries long
-# lines (Streamlit CSS blocks, Cypher templates, hash-concat expressions,
-# compiled regexes) and automated rewrapping risks semantic drift. Correctness
-# rules (F/E/W/I/N/UP minus E501) stay enforced.
 ignore = ["E501"]
 
 [tool.mypy]
@@ -117,11 +94,10 @@ ignore_missing_imports = true
 
 [tool.isort]
 profile = "black"
-line_length = 100
+line_length = 88
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-markers = [
-    "integration: marks tests as integration tests (require running databases)",
-]
+asyncio_default_fixture_loop_scope = "function"
+markers = ["integration: marks tests that require live external services"]

@@ -1,9 +1,23 @@
 FROM python:3.11-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy
+
 WORKDIR /app
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir "streamlit>=1.35" "requests>=2.31"
-COPY ui/ ./ui/
+
+RUN python -m pip install --no-cache-dir uv==0.13.9
+
+COPY . /app
+
+RUN uv sync --frozen --no-dev \
+    && useradd --system --uid 10001 --create-home finagent \
+    && chown -R finagent:finagent /app
+
+ENV PATH="/app/.venv/bin:${PATH}"
+
+USER finagent
 
 EXPOSE 8501
 

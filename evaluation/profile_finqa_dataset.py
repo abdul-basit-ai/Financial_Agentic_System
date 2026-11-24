@@ -44,7 +44,7 @@ MISSING_TOKENS = {
 YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 WORD_RE = re.compile(r"[A-Za-z0-9%\.]+")
 
-# Keyword buckets for financial metric categories.
+
 METRIC_CATEGORIES = {
     "revenue_sales": [
         "revenue",
@@ -175,7 +175,6 @@ def classify_question(question: str, program_ops: list[str], program: str) -> li
     if any(w in q for w in ratio_words) or "divide" in program_ops:
         labels.append("ratio")
 
-    # Multi-hop is approximated as multi-op programs and/or reference chaining.
     if len(program_ops) >= 2 or (isinstance(program, str) and "#" in program):
         labels.append("multi_hop")
 
@@ -275,7 +274,6 @@ def profile_dataset(dataset_dir: str) -> dict[str, Any]:
                 split_qtypes[qt] += 1
                 global_qtypes[qt] += 1
 
-            # Edge cases: answer/program consistency, missing/irregular cells, year-rich headers.
             if isinstance(answer, str) and answer.strip().lower() in {"yes", "no"}:
                 edge_cases[f"{split}:boolean_answer"] += 1
 
@@ -291,7 +289,7 @@ def profile_dataset(dataset_dir: str) -> dict[str, Any]:
                 for row in table:
                     if not isinstance(row, list):
                         continue
-                    # Heuristic: blank first cell with content later often indicates merged row labels in source.
+
                     if (
                         row
                         and str(row[0]).strip() == ""
@@ -304,7 +302,7 @@ def profile_dataset(dataset_dir: str) -> dict[str, Any]:
                         if cell in MISSING_TOKENS:
                             missing_cells += 1
                         for y in YEAR_RE.findall(str(c)):
-                            # YEAR_RE returns prefix groups when using alternation; parse via second regex below.
+
                             pass
                         for full in re.findall(r"\b(?:19|20)\d{2}\b", str(c)):
                             year_values.add(full)
@@ -316,7 +314,6 @@ def profile_dataset(dataset_dir: str) -> dict[str, Any]:
                 if len(year_values) >= 2:
                     edge_cases[f"{split}:multi_year_tables"] += 1
 
-                # Metric categories from row/header text and question.
                 table_text = " ".join(flatten_table(table))
                 combined_text = f"{question} {table_text}"
                 cats = detect_metric_categories(combined_text)
@@ -324,7 +321,6 @@ def profile_dataset(dataset_dir: str) -> dict[str, Any]:
                     split_categories[c] += 1
                     global_categories[c] += 1
 
-            # Text retrieval edge cues.
             if (
                 isinstance(pre_text, list)
                 and len(pre_text) == 0

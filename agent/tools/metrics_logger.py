@@ -47,7 +47,7 @@ def log_tool_result(
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
         return True
     except Exception:
-        # Metrics logging must never break tool execution (fail-open).
+
         return False
 
 

@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from agent.state.schema import AgentStateV1
+from evaluation.evidence import score_evidence
+from evaluation.finqa_program import canonicalize_program, execute_program
 from evaluation.metrics import (
-    compute_ir_metrics_content,
+    execution_value,
+    is_display_match,
     is_numeric_match,
     is_program_match,
-    parse_answer_float,
-    parse_float_safe,
+    parse_answer_value,
 )
-from evaluation.taxonomy import FailureCategory, TaxonomyAttribution, classify_failure
+from evaluation.taxonomy import FailureCategory, classify_failure
 
 
 class EvaluationRecord(BaseModel):
@@ -23,42 +25,52 @@ class EvaluationRecord(BaseModel):
     question: str
     company_identifier: str | None = None
     gold_answer: float | str
+    gold_display_answer: str | None = None
+    table: list[list[str]] = Field(default_factory=list)
     gold_program: str | None = None
     gold_inds: list[str] = Field(default_factory=list)
-    # Human-readable gold evidence strings (the VALUES of FinQA gold_indices).
-    # Retrieval is graded against these via content overlap; gold_inds keys
-    # (table_N / text_M) are kept for diagnostics only.
+
     gold_evidence: list[str] = Field(default_factory=list)
     split: str = "dev"
 
 
 class EvaluationResult(BaseModel):
     record_id: str
-    predicted_answer: float | None
-    gold_answer: float | None
+    predicted_answer: float | str | None
+    gold_answer: float | str | None
     execution_correct: bool
     program_correct: bool
+    program_execution_correct: bool
+    display_correct: bool | None
     ir_metrics: dict[str, float]
     taxonomy: FailureCategory
     taxonomy_explanation: str
     latency_ms: float
-    token_cost_usd: float
+    token_cost_usd: float | None
+    observed_cost_usd: float
+    unknown_cost_calls: int
     trace_id: str
 
 
 class FinQAEvaluator:
     """Executes records against the LangGraph agent and computes benchmarks."""
 
-    def __init__(self, agent_runner: Any | None = None) -> None:
+    def __init__(
+        self,
+        agent_runner: Any | None = None,
+        *,
+        scope: Literal["known-record", "open-corpus"] = "known-record",
+        display_abs_tol: float = 0.0,
+        display_rel_tol: float = 0.0,
+    ) -> None:
         self.agent = agent_runner
-        # Run-scoped thread prefix: the Redis checkpointer persists threads
-        # forever, and append-only state reducers would otherwise merge this
-        # run's results with every previous run on the same record id —
-        # silently reproducing stale trajectories (observed: identical
-        # benchmark results across runs after a retrieval overhaul).
+        self.scope = scope
+        self.display_abs_tol = display_abs_tol
+        self.display_rel_tol = display_rel_tol
+
         import uuid
 
-        self.run_id = uuid.uuid4().hex[:8]
+        self.run_id = uuid.uuid4().hex
 
     def thread_id_for(self, record: EvaluationRecord) -> str:
         return f"eval_{self.run_id}_{record.record_id}"
@@ -79,7 +91,7 @@ class FinQAEvaluator:
         )
         try:
             from langgraph.types import Command
-        except ImportError:  # very old langgraph: no interrupts to resolve
+        except ImportError:
             return final_state
 
         for _ in range(3):
@@ -102,151 +114,124 @@ class FinQAEvaluator:
         record: EvaluationRecord,
         simulated_state: dict[str, Any] | None = None,
     ) -> EvaluationResult:
-        start_time = time.perf_counter()
+        result, _ = self.run_instance(record, simulated_state)
+        return result
 
+    def run_instance(
+        self,
+        record: EvaluationRecord,
+        simulated_state: dict[str, Any] | None = None,
+    ) -> tuple[EvaluationResult, dict[str, Any]]:
+        start_time = time.perf_counter()
         if simulated_state is not None:
             final_state = simulated_state
+            elapsed_ms = 0.0
         elif self.agent is not None:
             initial_state = AgentStateV1(
                 input=record.question,
                 company_identifier=record.company_identifier,
-                record_id=record.record_id,
+                record_id=record.record_id if self.scope == "known-record" else None,
             )
             config = {"configurable": {"thread_id": self.thread_id_for(record)}}
             final_state = self._invoke_with_auto_approval(initial_state, config)
+            elapsed_ms = (time.perf_counter() - start_time) * 1000.0
         else:
-            raise ValueError("No agent runner or simulated state provided.")
+            raise ValueError("No agent runner or simulated state provided")
 
-        elapsed_ms = (time.perf_counter() - start_time) * 1000.0
-
-        # 1. Extract Prediction — from BOTH sequential (tool_results) and
-        # parallel (sub_task_results) execution paths (Phase 7 consistency)
-        tool_results = list(final_state.get("tool_results", []))
+        tools = list(final_state.get("tool_results", []))
         seen = {
-            (r.get("task_id"), r.get("tool_name"))
-            for r in tool_results
-            if r.get("task_id")
+            (r.get("task_id"), r.get("tool_name")) for r in tools if r.get("task_id")
         }
-        for tid, env in (final_state.get("sub_task_results") or {}).items():
-            if isinstance(env, dict) and (tid, env.get("tool_name")) not in seen:
-                tool_results.append(env)
-        math_results = [
-            r.get("data", {}).get("result")
-            for r in tool_results
-            if r.get("tool_name") in {"safe_math", "code_interpreter"} and r.get("data")
-        ]
-
-        # 1. Primary prediction: the executed math result (deterministic,
-        # exact). Without math, the synthesized answer text (marker-aware).
-        pred_float = None
-        if math_results:
-            pred_float = parse_float_safe(math_results[-1])
-        if pred_float is None:
-            pred_float = parse_answer_float(final_state.get("final_answer"))
-        gold_float = parse_float_safe(record.gold_answer)
-
-        # 2. Compute Metric Accuracies. final_answer is the fallback — the
-        # agent's stated answer is authoritative when the math envelope
-        # carried a stale/derived value (e.g. template synthesis picked the
-        # right figure directly from evidence).
-        exe_match = is_numeric_match(pred_float, gold_float)
-        if not exe_match:
-            fallback_float = parse_answer_float(final_state.get("final_answer"))
-            if is_numeric_match(fallback_float, gold_float):
-                pred_float = fallback_float
-                exe_match = True
-
-        # NOTE: failed envelopes carry "data": None (key present, value None),
-        # so a plain .get("data", {}) default is NOT enough here.
-        executed_exprs = [
-            str((r.get("data") or {}).get("expression", ""))
-            for r in tool_results
-            if r.get("tool_name") == "safe_math"
-        ]
-        prog_match = (
-            any(is_program_match(e, record.gold_program) for e in executed_exprs)
-            if record.gold_program
-            else False
+        tools.extend(
+            env
+            for tid, env in (final_state.get("sub_task_results") or {}).items()
+            if isinstance(env, dict) and (tid, env.get("tool_name")) not in seen
         )
 
-        # 3. Compute IR Metrics — content-based: retrieved evidence TEXT
-        # (row labels + amounts, chunk text) is graded against the gold
-        # evidence STRINGS. ID-space comparison is meaningless here because
-        # FinQA gold keys (table_N / text_M) never equal runtime labels.
-        #
-        # Sources are INTERLEAVED (round-robin graph row, vector chunk, ...)
-        # before the top-k slice. Envelope completion order always puts the
-        # vector task first (graph tasks depend on it), so plain concatenation
-        # filled all 5 metric slots with narrative chunks and made every
-        # graph row invisible to Recall@5 — capping measured recall near zero
-        # even when tabular retrieval succeeded (36/44 gold items are table
-        # rows only the graph can return).
-        graph_texts: list[str] = []
-        vector_texts: list[str] = []
-        for r in tool_results:
-            data = r.get("data")
-            if not isinstance(data, dict):
-                continue
-            for rec in data.get("records", []):
-                parts = [
-                    str(rec.get("row_label", "")),
-                    str(rec.get("amount", "")),
-                    str(rec.get("normalized_amount", "")),
-                    str(rec.get("year", "")),
-                ]
-                graph_texts.append(" ".join(p for p in parts if p and p != "None"))
-            for ch in data.get("chunks", []):
-                vector_texts.append(str(ch.get("text_content", "")))
-
-        retrieved_texts: list[str] = []
-        for i in range(max(len(graph_texts), len(vector_texts))):
-            if i < len(graph_texts):
-                retrieved_texts.append(graph_texts[i])
-            if i < len(vector_texts):
-                retrieved_texts.append(vector_texts[i])
-
-        ir_scores = compute_ir_metrics_content(
-            retrieved_texts, record.gold_evidence, k=5
+        status = final_state.get("answer_status")
+        final_answer = (
+            final_state.get("final_answer")
+            if status in {None, "grounded"}
+            and final_state.get("hitl_status") not in {"REJECTED", "REJECT", "PENDING"}
+            else None
         )
-        # Per-source diagnostics: recall over each source's FULL result list
-        # (no top-k truncation) so a low interleaved Recall@5 can be split
-        # into "graph never found it" vs "found it but ranked outside k".
-        for key, texts in (
-            ("recall_graph", graph_texts),
-            ("recall_vector", vector_texts),
-        ):
-            if texts:
-                ir_scores[key] = compute_ir_metrics_content(
-                    texts, record.gold_evidence, k=len(texts)
-                )["recall_at_k"]
-            else:
-                ir_scores[key] = 0.0
+        prediction = parse_answer_value(final_answer)
+        execution_correct = is_numeric_match(prediction, record.gold_answer)
 
-        # 4. Attribute Causal Failure
-        attr: TaxonomyAttribution = classify_failure(
+        math = [
+            envelope
+            for envelope in tools
+            if envelope.get("tool_name") == "safe_math"
+            and envelope.get("success", True)
+            and isinstance(envelope.get("data"), dict)
+        ]
+        task_id = final_state.get("answer_task_id")
+        selected: dict[str, Any]
+        if task_id:
+            selected = next(
+                (
+                    envelope["data"]
+                    for envelope in reversed(math)
+                    if envelope.get("task_id") == task_id
+                ),
+                {},
+            )
+        else:
+            selected = math[-1]["data"] if math and status is None else {}
+        symbolic = str(selected.get("program") or "")
+        program = (
+            symbolic
+            if canonicalize_program(symbolic)
+            else str(selected.get("expression") or "")
+        )
+        program_correct = bool(
+            record.gold_program and is_program_match(program, record.gold_program)
+        )
+        program_execution_correct = is_numeric_match(
+            execute_program(program, record.table), record.gold_answer
+        )
+        display_correct = (
+            is_display_match(
+                final_answer,
+                record.gold_display_answer,
+                abs_tol=self.display_abs_tol,
+                rel_tol=self.display_rel_tol,
+            )
+            if record.gold_display_answer is not None
+            else None
+        )
+
+        ir_scores = score_evidence(
+            record.record_id, record.gold_inds, record.gold_evidence, tools
+        )
+        attribution = classify_failure(
             state=final_state,
             gold_answer=record.gold_answer,
             gold_program=record.gold_program,
             gold_inds=record.gold_inds,
             recall_at_k=ir_scores["recall_at_k"],
+            execution_correct=execution_correct,
+            program_correct=program_correct,
         )
 
-        return EvaluationResult(
+        costs = [item.get("cost_usd") for item in final_state.get("llm_usage", [])]
+        unknowns = costs.count(None)
+        observed_cost = round(sum(float(cost) for cost in costs if cost is not None), 6)
+        result = EvaluationResult(
             record_id=record.record_id,
-            predicted_answer=pred_float,
-            gold_answer=gold_float,
-            execution_correct=exe_match,
-            program_correct=prog_match,
+            predicted_answer=prediction,
+            gold_answer=execution_value(record.gold_answer),
+            execution_correct=execution_correct,
+            program_correct=program_correct,
+            program_execution_correct=program_execution_correct,
+            display_correct=display_correct,
             ir_metrics=ir_scores,
-            taxonomy=attr.category,
-            taxonomy_explanation=attr.explanation,
+            taxonomy=attribution.category,
+            taxonomy_explanation=attribution.explanation,
             latency_ms=round(elapsed_ms, 3),
-            token_cost_usd=round(
-                sum(
-                    float(item.get("cost_usd", 0.0))
-                    for item in final_state.get("llm_usage", [])
-                ),
-                6,
-            ),
+            token_cost_usd=None if unknowns else observed_cost,
+            observed_cost_usd=observed_cost,
+            unknown_cost_calls=unknowns,
             trace_id=final_state.get("trace_id", "trace_simulated"),
         )
+        return result, final_state

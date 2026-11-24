@@ -20,6 +20,7 @@ from ingestion.entity_extractor import extract_company_identifier
 
 SPLITS = ["train", "dev", "test", "private_test"]
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+_PAGE_RE = re.compile(r"\bpage[_ -]?(\d+)(?:[._/-]|$)", re.I)
 
 
 def read_jsonl(path: str) -> Iterable[dict[str, Any]]:
@@ -48,6 +49,11 @@ def parse_year(value: Any) -> int | None:
         return value
     m = YEAR_RE.search(str(value))
     return int(m.group(0)) if m else None
+
+
+def source_page(filename: str) -> int | None:
+    match = _PAGE_RE.search(filename)
+    return int(match.group(1)) if match else None
 
 
 def infer_row_category(label: str) -> str:
@@ -112,21 +118,11 @@ def build_graph_payload(rec: dict[str, Any]) -> dict[str, Any]:
         {y for y in (parse_year(v) for v in fiscal_years) if y is not None}
     )
 
-    # Report.year previously took fiscal_years[0] — the EARLIEST year mentioned
-    # anywhere in the record (narrative included), which was wrong for 25/25
-    # benchmark records (e.g. V/2008 -> 2006, ETR/2015 -> 1982). The filing
-    # year is the filename's second segment; narrative-derived years are kept
-    # only as the table's observed year span.
     filename_parts = [p for p in filename.split("/") if p]
     filing_year = parse_year(filename_parts[1]) if len(filename_parts) > 1 else None
     if filing_year is None and years_sorted:
         filing_year = years_sorted[-1]
 
-    # Company identity: the filename ticker IS the filer (FinQA ground truth).
-    # entities.company_names mixes in-text candidates ("X Corp" patterns) with
-    # the ticker and is alphabetically sorted — company_names[0] can be a
-    # mere mention (Visa filings name Mastercard and AmEx). Only fall back to
-    # it when the filename carries no usable ticker.
     company_name = extract_company_identifier(filename)
     if not company_name:
         company_names = safe_list(entities.get("company_names"))
@@ -145,11 +141,14 @@ def build_graph_payload(rec: dict[str, Any]) -> dict[str, Any]:
         entities.get("metric_names_resolved") or entities.get("metric_names")
     )
 
-    # Column headers: the semantic axis FinQA questions ask about ("payments
-    # volume ( billions )"). Stored on each Value so retrieval can qualify a
-    # figure by its column, not just its row.
-    header_row_lists = safe_list(table_structure.get("header_rows"))
-    header_depth = len(header_row_lists) if header_row_lists else 0
+    source_rows = safe_list(table.get("source_row_indices"))
+    prior_row_count = table_structure.get("row_count")
+    legacy_depth = (
+        max(1, prior_row_count - len(table_rows))
+        if isinstance(prior_row_count, int)
+        else 1
+    )
+    page = source_page(filename)
 
     chunks: list[dict[str, Any]] = []
     for idx, ch in enumerate(safe_list(ctx.get("chunks"))):
@@ -160,6 +159,11 @@ def build_graph_payload(rec: dict[str, Any]) -> dict[str, Any]:
                 "id": f"chunk::{record_id}::{idx}",
                 "content": str(ch.get("text", "")),
                 "position": idx,
+                "source_file": filename,
+                "page": page,
+                "section": ch.get("source"),
+                "sentence_start": ch.get("start_sentence"),
+                "sentence_end": ch.get("end_sentence"),
             }
         )
 
@@ -176,17 +180,20 @@ def build_graph_payload(rec: dict[str, Any]) -> dict[str, Any]:
         if not row_label:
             row_label = f"row_{ridx}"
 
+        has_source_row = ridx < len(source_rows) and isinstance(source_rows[ridx], int)
+        source_index = source_rows[ridx] if has_source_row else ridx + legacy_depth
+        gold_id = f"table_{source_index}" if has_source_row else None
         row_id = f"row::{record_id}::{ridx}"
         rows.append(
             {
                 "id": row_id,
                 "label": row_label,
                 "category": infer_row_category(row_label),
-                # Index of this row in the ORIGINAL FinQA table (gold_inds
-                # table_N is 0-based over header-inclusive rows). Row ids
-                # enumerate normalized DATA rows only, so the header offset
-                # must be carried explicitly for gold evidence resolution.
-                "source_row_index": ridx + max(1, header_depth),
+                "source_row_index": source_index,
+                "evidence_id": (
+                    f"{table_id}::row::{source_index}" if has_source_row else None
+                ),
+                "gold_id": gold_id,
             }
         )
 
@@ -202,11 +209,11 @@ def build_graph_payload(rec: dict[str, Any]) -> dict[str, Any]:
                 continue
             amount = cell.get("numeric_value")
             normalized_amount = cell.get("numeric_value_base")
-            if amount is None and normalized_amount is None:
-                continue
-
             column_header = str(header[cidx]).strip() if cidx < len(header) else ""
-            year = parse_year(column_header)
+            years = set(YEAR_RE.findall(column_header))
+            year = int(next(iter(years))) if len(years) == 1 else None
+            if not years and YEAR_RE.fullmatch(row_label):
+                year = int(row_label)
             values.append(
                 {
                     "id": f"value::{record_id}::{ridx}::{cidx}",
@@ -216,6 +223,19 @@ def build_graph_payload(rec: dict[str, Any]) -> dict[str, Any]:
                     "year": year,
                     "column_index": cidx,
                     "column_header": column_header,
+                    "evidence_id": (
+                        f"{table_id}::row::{source_index}::col::{cidx}"
+                        if has_source_row
+                        else None
+                    ),
+                    "raw": cell.get("raw"),
+                    "unit_label": cell.get("unit_label"),
+                    "quantity_kind": cell.get("quantity_kind"),
+                    "currency": cell.get("currency"),
+                    "scale_multiplier": cell.get("scale_multiplier"),
+                    "is_percentage": cell.get("is_percentage"),
+                    "units_ambiguous": cell.get("units_ambiguous"),
+                    "is_missing": cell.get("is_missing"),
                 }
             )
 
@@ -228,8 +248,6 @@ def build_graph_payload(rec: dict[str, Any]) -> dict[str, Any]:
         for m in metric_names
     ]
 
-    # Table caption: prefer the real column headers; the question text that
-    # used to be stored here is not a caption and misled header-based matching.
     table_title = " | ".join(str(h) for h in header if str(h).strip())
     if not table_title:
         table_title = question[:120] if question else "Financial Table"
@@ -242,6 +260,7 @@ def build_graph_payload(rec: dict[str, Any]) -> dict[str, Any]:
             "year_min": years_sorted[0] if years_sorted else None,
             "year_max": years_sorted[-1] if years_sorted else None,
             "source_file": filename,
+            "page": page,
             "record_id": record_id,
             "question": question,
             "split": str(rec.get("split", "")),
@@ -273,7 +292,7 @@ class GraphLoader:
         from neo4j import GraphDatabase
 
         self._driver = GraphDatabase.driver(
-            self._uri, auth=(self._user, self._password)
+            self._uri, auth=(self._user, self._password), connection_timeout=3
         )
 
     def close(self) -> None:
@@ -298,17 +317,7 @@ class GraphLoader:
                 session.run(q)
 
     def wipe_all(self, batch_size: int = 20000) -> int:
-        """Deletes every node in the database (rebuild-from-source escape).
-
-        MERGE is idempotent by node id, but row/value ids embed
-        heuristic-derived indices, so re-loading after a parser change layers
-        new ids over ghost children of the old indexing. A full rebuild is
-        the only clean path; data is derivable from data/raw + this code.
-
-        Deletes run in bounded batches: a single MATCH (n) DETACH DELETE n
-        over ~260k nodes exceeds the default transaction memory limit
-        (Neo.TransientError.General.MemoryPoolOutOfMemoryError).
-        """
+        """Delete all graph nodes in bounded batches for a full source rebuild."""
         assert self._driver is not None
         total = 0
         with self._driver.session(database=self.database) as session:
@@ -333,6 +342,7 @@ class GraphLoader:
             {p["report"]["id"]: p["report"] for p in payloads}.values()
         )
         unique_tables = list({p["table"]["id"]: p["table"] for p in payloads}.values())
+        table_ids = [table["id"] for table in unique_tables]
 
         tx.run(
             """
@@ -353,7 +363,8 @@ class GraphLoader:
                 r.source_file = row.source_file,
                 r.record_id = row.record_id,
                 r.question = row.question,
-                r.split = row.split
+                r.split = row.split,
+                r.page = row.page
             """,
             rows=unique_reports,
         )
@@ -409,12 +420,77 @@ class GraphLoader:
             raw_metrics.extend(p["metrics"])
             raw_metric_links.extend(p["metric_row_links"])
 
+        tx.run(
+            """
+            UNWIND $resources AS resource
+            MATCH (t:Table {id: resource.table_id})-[:HAS_ROW]->(rw:Row)-[:HAS_VALUE]->(v:Value)
+            WHERE NOT v.id IN resource.value_ids
+            DETACH DELETE v
+            """,
+            resources=[
+                {
+                    "table_id": p["table"]["id"],
+                    "value_ids": [v["id"] for v in p["values"]],
+                }
+                for p in payloads
+            ],
+        )
+        tx.run(
+            """
+            UNWIND $resources AS resource
+            MATCH (t:Table {id: resource.table_id})-[:HAS_ROW]->(rw:Row)
+            WHERE NOT rw.id IN resource.row_ids
+            DETACH DELETE rw
+            """,
+            resources=[
+                {"table_id": p["table"]["id"], "row_ids": [r["id"] for r in p["rows"]]}
+                for p in payloads
+            ],
+        )
+        tx.run(
+            """
+            UNWIND $table_ids AS table_id
+            MATCH (t:Table {id: table_id})-[:HAS_ROW]->(rw:Row)<-[link:MEASURED_BY]-(:Metric)
+            DELETE link
+            """,
+            table_ids=table_ids,
+        )
+        tx.run(
+            """
+            UNWIND $table_ids AS table_id
+            MATCH (t:Table {id: table_id})-[:HAS_ROW]->(:Row)-[:HAS_VALUE]->(:Value)-[link:NEXT_YEAR]->(:Value)
+            DELETE link
+            """,
+            table_ids=table_ids,
+        )
+        tx.run(
+            """
+            UNWIND $resources AS resource
+            MATCH (r:Report {id: resource.report_id})-[:HAS_CONTEXT]->(tc:TextChunk)
+            WHERE NOT tc.id IN resource.chunk_ids
+            DETACH DELETE tc
+            """,
+            resources=[
+                {
+                    "report_id": p["report"]["id"],
+                    "chunk_ids": [chunk["id"] for chunk in p["chunks"]],
+                }
+                for p in payloads
+            ],
+        )
+
         if chunk_rows:
             tx.run(
                 """
                 UNWIND $rows AS row
                 MERGE (tc:TextChunk {id: row.id})
-                SET tc.content = row.content, tc.position = row.position
+                SET tc.content = row.content,
+                    tc.position = row.position,
+                    tc.source_file = row.source_file,
+                    tc.page = row.page,
+                    tc.section = row.section,
+                    tc.sentence_start = row.sentence_start,
+                    tc.sentence_end = row.sentence_end
                 WITH row, tc
                 MATCH (r:Report {id: row.report_id})
                 MERGE (r)-[:HAS_CONTEXT]->(tc)
@@ -429,7 +505,9 @@ class GraphLoader:
                 MERGE (rw:Row {id: row.id})
                 SET rw.label = row.label,
                     rw.category = row.category,
-                    rw.source_row_index = row.source_row_index
+                    rw.source_row_index = row.source_row_index,
+                    rw.evidence_id = row.evidence_id,
+                    rw.gold_id = row.gold_id
                 WITH row, rw
                 MATCH (t:Table {id: row.table_id})
                 MERGE (t)-[:HAS_ROW]->(rw)
@@ -446,7 +524,16 @@ class GraphLoader:
                     v.normalized_amount = row.normalized_amount,
                     v.year = row.year,
                     v.column_index = row.column_index,
-                    v.column_header = row.column_header
+                    v.column_header = row.column_header,
+                    v.evidence_id = row.evidence_id,
+                    v.raw = row.raw,
+                    v.unit_label = row.unit_label,
+                    v.quantity_kind = row.quantity_kind,
+                    v.currency = row.currency,
+                    v.scale_multiplier = row.scale_multiplier,
+                    v.is_percentage = row.is_percentage,
+                    v.units_ambiguous = row.units_ambiguous,
+                    v.is_missing = row.is_missing
                 WITH row, v
                 MATCH (rw:Row {id: row.row_id})
                 MERGE (rw)-[:HAS_VALUE]->(v)
@@ -455,6 +542,16 @@ class GraphLoader:
                 MERGE (v)-[:IN_REPORT]->(r)
                 """,
                 rows=value_rows,
+            )
+            tx.run(
+                """
+                UNWIND $table_ids AS table_id
+                MATCH (t:Table {id: table_id})-[:HAS_ROW]->(rw:Row)-[:HAS_VALUE]->(a:Value)
+                MATCH (rw)-[:HAS_VALUE]->(b:Value)
+                WHERE a.year IS NOT NULL AND b.year = a.year + 1
+                MERGE (a)-[:NEXT_YEAR]->(b)
+                """,
+                table_ids=table_ids,
             )
 
         unique_metrics = list({m["id"]: m for m in raw_metrics}.values())
@@ -602,7 +699,7 @@ def main() -> None:
     payloads = collect_payloads(args.normalized_dir, args.splits, args.limit_per_split)
 
     if args.dry_run:
-        # Summarize what WOULD be loaded, without connecting to Neo4j.
+
         totals = GraphLoadStats()
         for p in payloads:
             totals.reports += 1

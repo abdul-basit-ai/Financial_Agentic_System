@@ -32,10 +32,7 @@ class MCPClientBridge:
         tools_list = await self._server.list_tools()
         discovered = []
         for t in tools_list:
-            # mcp >= 1.x FastMCP exposes the JSON Schema as `inputSchema`
-            # (camelCase, matching the wire protocol); older/alternate shapes
-            # used `parameters`. Try both so discovery never returns empty
-            # schemas, which would silently weaken the MCP contract.
+
             schema = getattr(t, "inputSchema", None)
             if not schema:
                 schema = getattr(t, "parameters", {})
@@ -62,7 +59,6 @@ class MCPClientBridge:
         """
         result = await self._server.call_tool(name=name, arguments=arguments)
 
-        # MCP >=1.x low-level server returns a (content_blocks, structured_dict) tuple
         if isinstance(result, tuple) and len(result) >= 1:
             content_blocks = result[0]
         elif isinstance(result, list):

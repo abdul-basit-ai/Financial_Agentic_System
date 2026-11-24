@@ -228,18 +228,13 @@ def test_end_to_end_parallel_graph_execution() -> None:
     assert any("Fan-In Barrier" in log for log in result["scratchpad"])
 
 
-# =====================================================================
-# Per-Tool Concurrency Limiter Tests (Phase 7 hard backpressure)
-# =====================================================================
-
-
 def test_tool_slot_immediate_and_release() -> None:
     from agent.nodes.concurrency import ToolSlot
 
     with ToolSlot("safe_math") as slot:
         assert slot.status == "immediate"
         assert slot.wait_seconds == 0.0
-    # Released -> next acquire is immediate again
+
     with ToolSlot("safe_math") as slot2:
         assert slot2.status == "immediate"
 
@@ -249,7 +244,6 @@ def test_tool_slot_blocks_at_limit_and_queues() -> None:
 
     from agent.nodes.concurrency import ToolSlot, get_contention_stats
 
-    # Exhaust the graph_retrieval limit (4) from other threads
     holders: list[ToolSlot] = []
     entered = threading.Event()
 
@@ -265,15 +259,12 @@ def test_tool_slot_blocks_at_limit_and_queues() -> None:
     entered.wait(timeout=5)
     t.join()
 
-    # 5th acquire must queue (wait) rather than exceed the cap
     with ToolSlot("graph_retrieval") as slot:
         assert slot.status in {"waited", "timeout"}
 
-    # Release everything
     for s in holders:
         s.__exit__(None, None, None)
 
-    # Slot free again
     with ToolSlot("graph_retrieval") as after:
         assert after.status == "immediate"
 
@@ -288,7 +279,6 @@ def test_worker_fails_task_on_concurrency_timeout(monkeypatch) -> None:
 
     monkeypatch.setattr(concurrency, "MAX_WAIT_SECONDS", 0.2)
 
-    # Occupy all 8 safe_math slots (TOOL_CONCURRENCY_LIMITS["safe_math"])
     limit = concurrency.TOOL_CONCURRENCY_LIMITS["safe_math"]
     holders = [concurrency.ToolSlot("safe_math") for _ in range(limit)]
     for h in holders:

@@ -16,6 +16,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from evaluation.manifest import hash_json, id_set_digest, load_manifest
+
 
 class GateDecision(BaseModel):
     passed: bool
@@ -43,19 +45,14 @@ def compute_mcnemar_test(
     if len(baseline_flags) != len(candidate_flags):
         raise ValueError("Baseline and candidate outcomes must have identical lengths.")
 
-    n10 = sum(
-        1 for b, c in zip(baseline_flags, candidate_flags) if b and not c
-    )  # Regressions
-    n01 = sum(
-        1 for b, c in zip(baseline_flags, candidate_flags) if not b and c
-    )  # Improvements
+    n10 = sum(1 for b, c in zip(baseline_flags, candidate_flags) if b and not c)
+    n01 = sum(1 for b, c in zip(baseline_flags, candidate_flags) if not b and c)
 
     denom = n01 + n10
     if denom == 0:
         return 0.0, 1.0
 
-    # McNemar statistic with continuity correction: (|n01 - n10| - 1)^2 / (n01 + n10)
-    chi2 = ((abs(n01 - n10) - 1.0) ** 2) / denom
+    chi2 = max(0.0, abs(n01 - n10) - 1.0) ** 2 / denom
     p_val = compute_mcnemar_p_value_1df(chi2)
     return round(chi2, 4), round(p_val, 6)
 
@@ -97,21 +94,48 @@ def evaluate_gate(
     with open(candidate_path, encoding="utf-8") as f:
         cand_data = json.load(f)
 
-    base_results: list[dict[str, Any]] = base_data.get("results", [])
-    cand_results: list[dict[str, Any]] = cand_data.get("results", [])
+    if not 0 <= max_regression_rate <= 1:
+        raise ValueError("max_regression_rate must be between 0 and 1")
 
-    # Index by record_id
-    base_map = {r["record_id"]: r["execution_correct"] for r in base_results}
-    cand_map = {r["record_id"]: r["execution_correct"] for r in cand_results}
+    base_manifest = load_manifest(base_data)
+    cand_manifest = load_manifest(cand_data)
+    if (
+        base_manifest.execution != "candidate-runtime"
+        or cand_manifest.execution != "candidate-runtime"
+    ):
+        raise ValueError("The gate requires two candidate-runtime benchmarks")
 
-    common_ids = sorted(set(base_map.keys()) & set(cand_map.keys()))
-    if not common_ids:
-        raise ValueError(
-            "Zero overlapping records found between baseline and candidate benchmarks."
-        )
+    def outcomes(artifact: dict[str, Any], expected_ids: str) -> dict[str, bool]:
+        rows = artifact.get("results")
+        if not isinstance(rows, list) or artifact.get("total_samples") != len(rows):
+            raise ValueError("Benchmark result count does not match the artifact")
+        if artifact.get("results_sha256") != hash_json(rows):
+            raise ValueError("Benchmark results checksum does not match")
+        ids = []
+        result: dict[str, bool] = {}
+        for item in rows:
+            record_id = item.get("record_id") if isinstance(item, dict) else None
+            correct = item.get("execution_correct") if isinstance(item, dict) else None
+            if not isinstance(record_id, str) or type(correct) is not bool:
+                raise ValueError(
+                    "Each outcome must declare a record ID and a Boolean result"
+                )
+            ids.append(record_id)
+            result[record_id] = correct
+        if id_set_digest(ids) != expected_ids:
+            raise ValueError("Benchmark IDs do not match the run manifest")
+        return result
 
-    base_flags = [base_map[rid] for rid in common_ids]
-    cand_flags = [cand_map[rid] for rid in common_ids]
+    base_map = outcomes(base_data, base_manifest.config.record_ids_sha256)
+    cand_map = outcomes(cand_data, cand_manifest.config.record_ids_sha256)
+    if base_map.keys() != cand_map.keys():
+        raise ValueError("Baseline and candidate must contain identical record ID sets")
+    if base_manifest.config != cand_manifest.config:
+        raise ValueError("Benchmark manifests are incompatible")
+
+    ids = sorted(base_map)
+    base_flags = [base_map[rid] for rid in ids]
+    cand_flags = [cand_map[rid] for rid in ids]
 
     base_acc = sum(base_flags) / len(base_flags)
     cand_acc = sum(cand_flags) / len(cand_flags)
@@ -121,19 +145,17 @@ def evaluate_gate(
     ci_95 = compute_bootstrap_ci(cand_flags)
 
     n10 = sum(1 for b, c in zip(base_flags, cand_flags) if b and not c)
-    reg_rate = n10 / len(common_ids)
+    reg_rate = n10 / len(ids)
 
     reasons: list[str] = []
     passed = True
 
-    # Rule 1: No negative accuracy regression
     if delta < 0.0:
         passed = False
         reasons.append(
             f"Net accuracy dropped by {abs(delta):.2%} ({base_acc:.2%} -> {cand_acc:.2%})."
         )
 
-    # Rule 2: Regressed sample rate exceeds tolerance
     if reg_rate > max_regression_rate:
         passed = False
         reasons.append(

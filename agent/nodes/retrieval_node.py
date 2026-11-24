@@ -54,8 +54,6 @@ def retrieve_graph_node(state: AgentStateV1) -> dict[str, Any]:
             )
         else:
             remaining_calls.append(dict(call))
-    # Executed calls leave the queue; no need to re-add their updated copies.
-    # (Their completion is recorded in tool_results; re-adding would double-count.)
 
     return {
         "tool_calls": remaining_calls,
@@ -127,9 +125,15 @@ def fuse_context_node(state: AgentStateV1) -> dict[str, Any]:
                 for c in data["chunks"]:
                     vector_chunks.append(VectorChunkRecord(**c))
 
-    _collect(state.tool_results)
-    # Phase 7 parallel workers report via sub_task_results; include without
-    # duplicating anything already collected from tool_results.
+    current_ids = {c.get("task_id") for c in state.tool_calls}
+    _collect(
+        [
+            r
+            for r in state.tool_results
+            if not current_ids or r.get("task_id") in current_ids
+        ]
+    )
+
     seen = {
         (r.get("task_id"), r.get("tool_name"))
         for r in state.tool_results
@@ -138,7 +142,9 @@ def fuse_context_node(state: AgentStateV1) -> dict[str, Any]:
     parallel_only = [
         env
         for tid, env in state.sub_task_results.items()
-        if isinstance(env, dict) and (tid, env.get("tool_name")) not in seen
+        if isinstance(env, dict)
+        and (not current_ids or tid in current_ids)
+        and (tid, env.get("tool_name")) not in seen
     ]
     _collect(parallel_only)
 
@@ -159,5 +165,13 @@ def fuse_context_node(state: AgentStateV1) -> dict[str, Any]:
     )
 
     return {
+        "fused_context": (
+            fusion_result.data.formatted_context if fusion_result.data else ""
+        ),
+        "evidence": (
+            [item.model_dump() for item in fusion_result.data.fused_items]
+            if fusion_result.data
+            else []
+        ),
         "scratchpad": [log_entry, f"[Fused Context Preview]\n{fused_preview}"],
     }

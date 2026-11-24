@@ -9,22 +9,28 @@ Two planner paths share one output contract:
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
 
-from agent.llm import invoke_llm, is_llm_enabled
+from agent.llm import invoke_llm, is_llm_enabled, llm_usage_entry
+from agent.nodes.evidence_math import Operand, resolve_arithmetic
 from agent.prompts import load_prompt
 from agent.state.schema import AgentStateV1
 from agent.tools.decomposer import SubTask, decompose_query
+from agent.tools.graph_tool import GraphQueryInput
+from agent.tools.safe_math import SafeMathInput
+from agent.tools.table_tool import TableExtractInput
+from agent.tools.vector_tool import VectorSearchInput
 
 GRAPH_VERSION = "v1.0.0"
 
 _PLANNER_PROMPT_NAME = "planner_v2"
 
-# Strips markdown code fences the model may add despite instructions
+
 _JSON_FENCE_RE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
 
 
@@ -33,7 +39,22 @@ class LLMPlan(BaseModel):
 
     is_multi_hop: bool = False
     reasoning_plan: str = ""
-    sub_tasks: list[SubTask] = Field(default_factory=list)
+    sub_tasks: list[SubTask] = Field(default_factory=list, max_length=16)
+
+
+def validate_tool_payload(tool: str, payload: dict[str, Any]) -> None:
+    schemas: dict[str, type[BaseModel]] = {
+        "graph_retrieval": GraphQueryInput,
+        "vector_retrieval": VectorSearchInput,
+        "safe_math": SafeMathInput,
+        "table_extract": TableExtractInput,
+    }
+    schema = schemas[tool]
+    if set(payload) - set(schema.model_fields):
+        raise ValueError("Unknown tool parameters")
+    schema.model_validate(payload, strict=True)
+    if any(isinstance(value, str) and not value.strip() for value in payload.values()):
+        raise ValueError("Empty tool parameter")
 
 
 def _extract_json(content: str) -> dict[str, Any] | None:
@@ -42,7 +63,7 @@ def _extract_json(content: str) -> dict[str, Any] | None:
     fence = _JSON_FENCE_RE.match(text)
     if fence:
         text = fence.group(1)
-    # Tolerate prose before/after the object
+
     start, end = text.find("{"), text.rfind("}")
     if start == -1 or end <= start:
         return None
@@ -70,6 +91,23 @@ def _validate_llm_plan(plan: LLMPlan) -> list[str]:
             )
         if not isinstance(task.query_payload, dict) or not task.query_payload:
             problems.append(f"{task.task_id} has empty payload")
+        try:
+            validate_tool_payload(task.target_tool, task.query_payload)
+            if task.target_tool == "safe_math":
+
+                def reference(node: ast.expr) -> Operand | None:
+                    if (
+                        isinstance(node, ast.Attribute)
+                        and isinstance(node.value, ast.Name)
+                        and node.attr == "amount"
+                        and node.value.id in task.dependencies
+                    ):
+                        return Operand("1.0", [], "number", 1)
+                    return None
+
+                resolve_arithmetic(task.query_payload["expression"], reference)
+        except (ValueError, KeyError, SyntaxError) as exc:
+            problems.append(f"{task.task_id} invalid {task.target_tool} payload: {exc}")
         seen.add(task.task_id)
 
     has_retrieval = any(
@@ -85,7 +123,8 @@ def _validate_llm_plan(plan: LLMPlan) -> list[str]:
 
 def _plan_with_llm(
     state: AgentStateV1,
-) -> tuple[list[dict[str, Any]], str, dict[str, Any]] | None:
+    usage: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], str] | None:
     """Attempts LLM decomposition. Returns (pending_calls, log, usage)."""
     if not is_llm_enabled():
         return None
@@ -93,12 +132,27 @@ def _plan_with_llm(
     _, prompt_version, prompt_hash = load_prompt(_PLANNER_PROMPT_NAME)
     company = state.company_identifier or "UNKNOWN"
     user_prompt = f"Company identifier: {company}\n" f"User question: {state.input}"
+    if state.iteration_count:
+        last_tasks = [
+            (
+                c.get("target_tool"),
+                c.get("payload"),
+                (state.sub_task_results.get(c["task_id"]) or {}).get("error"),
+            )
+            for c in state.tool_calls
+        ]
+        user_prompt += (
+            "\nPrevious plan produced insufficient evidence. Revise the retrievals:\n"
+            + json.dumps(last_tasks)
+        )
 
     result = invoke_llm(
         system_prompt=load_prompt(_PLANNER_PROMPT_NAME)[0],
         user_prompt=user_prompt,
         max_tokens=800,
+        task="planner",
     )
+    usage.append(llm_usage_entry("planner", result))
     if result is None:
         return None
 
@@ -121,37 +175,57 @@ def _plan_with_llm(
         return None
 
     if not plan.sub_tasks:
-        # Model explicitly judged the question unanswerable; an empty plan
-        # would stall the graph, so fall through to the deterministic planner
-        # which always schedules retrieval.
+
         return None
 
     pending_calls: list[dict[str, Any]] = []
     for task in plan.sub_tasks:
+        payload = dict(task.query_payload)
+        if task.target_tool in {"graph_retrieval", "vector_retrieval"}:
+            for scoped_key in ("record_id", "record_ids", "split"):
+                payload.pop(scoped_key, None)
         pending_calls.append(
             {
                 "task_id": task.task_id,
                 "target_tool": task.target_tool,
-                "payload": task.query_payload,
+                "payload": payload,
                 "dependencies": task.dependencies,
                 "status": "PENDING",
+                "verify_formula": task.target_tool == "safe_math",
             }
         )
 
     log = (
         f"[Planner {prompt_version} (hash:{prompt_hash}) llm:{result.model}] "
         f"Generated plan with {len(pending_calls)} tasks. Strategy: {plan.reasoning_plan}. "
-        f"LLM tokens: {result.prompt_tokens}+{result.completion_tokens}, "
-        f"est. cost ${result.cost_usd:.6f}."
+        f"LLM tokens: {result.prompt_tokens}+{result.completion_tokens}."
     )
-    usage = {
-        "stage": "planner",
-        "model": result.model,
-        "prompt_tokens": result.prompt_tokens,
-        "completion_tokens": result.completion_tokens,
-        "cost_usd": result.cost_usd,
+    return pending_calls, log
+
+
+def rekey_calls(calls: list[dict[str, Any]], generation: int) -> list[dict[str, Any]]:
+    names = {
+        c["task_id"]: f"task_{100 * generation + i}" for i, c in enumerate(calls, 1)
     }
-    return pending_calls, log, usage
+    updated = []
+    for original in calls:
+        payload = dict(original["payload"])
+        if original["target_tool"] == "safe_math":
+            payload["expression"] = re.sub(
+                r"\btask_\d+(?=\.amount\b)",
+                lambda m: names[m[0]],
+                payload["expression"],
+            )
+        updated.append(
+            {
+                **original,
+                "task_id": names[original["task_id"]],
+                "payload": payload,
+                "dependencies": [names[d] for d in original.get("dependencies", [])],
+                "status": "PENDING",
+            }
+        )
+    return updated
 
 
 def plan_node(state: AgentStateV1) -> dict[str, Any]:
@@ -159,23 +233,12 @@ def plan_node(state: AgentStateV1) -> dict[str, Any]:
     _, prompt_version, prompt_hash = load_prompt("planner_v1")
     new_iteration = state.iteration_count + 1
 
-    # Check if this is an iterative refinement loop
-    if state.tool_results and not state.final_answer:
-        log_entry = (
-            f"[Planner {prompt_version}@{GRAPH_VERSION} (hash:{prompt_hash})] "
-            f"Iteration {new_iteration}: Reviewing {len(state.tool_results)} completed tool results."
-        )
-        return {
-            "iteration_count": new_iteration,
-            "scratchpad": [log_entry],
-            "risk_evaluated": False,
-        }
-
-    llm_outcome = _plan_with_llm(state)
+    usage: list[dict[str, Any]] = []
+    llm_outcome = _plan_with_llm(state, usage)
     if llm_outcome is not None:
-        pending_calls, log_entry, usage = llm_outcome
+        pending_calls, log_entry = llm_outcome
     else:
-        # Macro-decomposition of user financial question (rule-based fallback)
+
         company = state.company_identifier or "UNKNOWN"
         decomp = decompose_query(query=state.input, company=company)
 
@@ -195,13 +258,16 @@ def plan_node(state: AgentStateV1) -> dict[str, Any]:
             f"[Planner {prompt_version}@{GRAPH_VERSION} (hash:{prompt_hash}) rules] "
             f"Generated plan with {len(pending_calls)} tasks. Strategy: {decomp.reasoning_plan}"
         )
-        usage = {}
+        if state.iteration_count:
+            for call in pending_calls:
+                if call["target_tool"] == "vector_retrieval":
+                    call["payload"]["top_k"] = min(20, 5 * new_iteration)
 
-    # Record anchoring: when the caller knows the filing the question is
-    # about (the benchmark always does — FinQA ships question+filing as one
-    # record, mirroring the original benchmark's information set), scope
-    # every retrieval task to it up front instead of waiting for the vector
-    # top-1 heuristic.
+    if state.company_identifier:
+        for call in pending_calls:
+            if call["target_tool"] in {"graph_retrieval", "vector_retrieval"}:
+                call["payload"]["company_identifier"] = state.company_identifier
+
     if state.record_id:
         for call in pending_calls:
             if call.get("target_tool") in {"graph_retrieval", "vector_retrieval"}:
@@ -210,9 +276,6 @@ def plan_node(state: AgentStateV1) -> dict[str, Any]:
                     "record_id": state.record_id,
                 }
 
-        # Full-table extraction: unconditional on anchored plans. Program
-        # generation at synthesis needs the ENTIRE table (every row x every
-        # column); one small Cypher read, no planner discretion involved.
         existing_ids = {c.get("task_id") for c in pending_calls}
         table_task_id = "task_table"
         n = 1
@@ -230,10 +293,15 @@ def plan_node(state: AgentStateV1) -> dict[str, Any]:
         )
         log_entry = f"{log_entry} + full-table extraction ({table_task_id})."
 
+    if state.iteration_count:
+        pending_calls = rekey_calls(pending_calls, state.iteration_count)
     return {
         "iteration_count": new_iteration,
         "tool_calls": pending_calls,
         "scratchpad": [log_entry],
-        "llm_usage": [usage] if usage else [],
+        "llm_usage": usage,
+        "fused_context": "",
+        "evidence": [],
+        "citations": [],
         "risk_evaluated": False,
     }

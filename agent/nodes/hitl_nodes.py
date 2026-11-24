@@ -4,30 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-# Resilient LangGraph interrupt import across versions
-try:
-    from langgraph.types import interrupt
-except ImportError:  # pragma: no cover - version shims for very old langgraph
-    try:
-        from langgraph.checkpoint.base import interrupt  # type: ignore[attr-defined,no-redef]
-    except ImportError:  # type: ignore[no-redef]
-
-        def interrupt(payload: Any) -> Any:  # type: ignore[misc,no-redef]  # Fallback mock for unit tests
-            return {"action": "APPROVE"}
-
+from langgraph.types import interrupt
 
 from agent.guardrails.persistent_audit import PersistentMerkleAuditLedger
 from agent.guardrails.risk_engine import FinancialRiskEngine
 from agent.state.schema import AgentStateV1
 
-# Durable audit ledger: Merkle chain persisted to Postgres, surviving process
-# restarts (SEC 17a-4 posture). Degrades to memory-only with a loud warning
-# if the database is unreachable — audit gaps are never silent.
-#
-# The instance is created at import (cheap: no I/O in __init__) but schema
-# initialization happens lazily on first governance event, so merely importing
-# this module never touches Postgres (keeps offline test runs fast and
-# import-safe).
 AUDIT_LEDGER: PersistentMerkleAuditLedger = PersistentMerkleAuditLedger()
 _schema_initialized = False
 
@@ -36,7 +18,8 @@ def _ensure_audit_schema() -> None:
     """Initializes the audit table once per process (idempotent DDL)."""
     global _schema_initialized
     if not _schema_initialized:
-        AUDIT_LEDGER.init_schema()
+        if not AUDIT_LEDGER.init_schema():
+            raise RuntimeError("Durable audit storage is unavailable.")
         _schema_initialized = True
 
 
@@ -54,6 +37,7 @@ def eval_financial_risk_node(state: AgentStateV1) -> dict[str, Any]:
             "risk_score": assessment.composite_risk_score,
             "requires_hitl": assessment.requires_hitl,
         },
+        metadata={"event_id": f"risk:{state.trace_id}:{state.iteration_count}"},
     )
 
     log_msg = (
@@ -79,7 +63,7 @@ def hitl_gate_node(state: AgentStateV1) -> dict[str, Any]:
     before returning, so 'edit-and-resume' flows actually take effect.
     """
     _ensure_audit_schema()
-    # Prepare interrupt payload presented to the human reviewer
+
     interrupt_payload = {
         "trace_id": state.trace_id,
         "input_query": state.input,
@@ -94,19 +78,18 @@ def hitl_gate_node(state: AgentStateV1) -> dict[str, Any]:
         actor_id="system_gate",
         action_type="SUSPEND_INTERRUPT",
         state_payload=interrupt_payload,
+        metadata={"event_id": f"suspend:{state.trace_id}:{state.iteration_count}"},
     )
 
-    # LangGraph interrupt freezes the execution thread into the checkpointer
     human_response = interrupt(interrupt_payload)
 
-    # Resumed: Process decision payload
-    action = str(human_response.get("action", "APPROVE")).upper()
+    action = str(human_response.get("action", "REJECT")).upper()
     analyst_id = human_response.get("analyst_id", "analyst_unknown")
     feedback = human_response.get("feedback", "No comment provided.")
     overrides = human_response.get("overrides", {})
 
     if action not in {"APPROVE", "REJECT", "EDIT"}:
-        # Fail closed: unknown verdicts must not silently auto-approve.
+
         AUDIT_LEDGER.record_transition(
             trace_id=state.trace_id,
             node_name="hitl_gate",
@@ -130,15 +113,36 @@ def hitl_gate_node(state: AgentStateV1) -> dict[str, Any]:
 
     updates: dict[str, Any] = {"hitl_status": action, "scratchpad": [log_entry]}
 
-    # Apply reviewer edits to pending tool calls (edit-and-resume contract).
     if action == "EDIT" and isinstance(overrides, dict):
         edited_calls = overrides.get("tool_calls")
-        if isinstance(edited_calls, list):
-            updates["tool_calls"] = edited_calls
+        if isinstance(edited_calls, list) and edited_calls:
+            from agent.nodes.plan_node import rekey_calls, validate_tool_payload
+
+            seen: set[str] = set()
+            for call in edited_calls:
+                if (
+                    not isinstance(call, dict)
+                    or not call.get("task_id")
+                    or call["task_id"] in seen
+                ):
+                    raise ValueError("Edited calls require unique task IDs.")
+                if not set(call.get("dependencies", [])).issubset(seen):
+                    raise ValueError(
+                        "Edited calls must form a self-contained ordered plan."
+                    )
+                validate_tool_payload(call["target_tool"], call.get("payload", {}))
+                seen.add(call["task_id"])
+            updates["tool_calls"] = rekey_calls(edited_calls, state.iteration_count)
+            updates["iteration_count"] = state.iteration_count + 1
+            updates["risk_evaluated"] = False
+            updates["citations"] = []
+            updates["final_answer"] = None
             updates["scratchpad"] = [
                 log_entry,
                 f"[HITL Override] {len(edited_calls)} tool call(s) replaced per reviewer edits.",
             ]
+        else:
+            raise ValueError("An edited plan must contain at least one tool call.")
 
     return updates
 
@@ -149,11 +153,12 @@ def apply_override_node(state: AgentStateV1) -> dict[str, Any]:
         "[HITL Override] Verified and aligned state with human directions."
     ]
 
-    # If rejected, mark terminal or redirect to plan
     if state.hitl_status in {"REJECTED", "REJECT"}:
         return {
             "final_answer": "Execution rejected by financial compliance review. Trajectory aborted.",
             "is_terminal": True,
+            "answer_status": "rejected",
+            "citations": [],
             "scratchpad": ["[HITL Override] Execution terminated by human reviewer."],
         }
 

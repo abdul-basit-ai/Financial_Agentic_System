@@ -14,6 +14,8 @@ class QueryRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
+    document_ids: list[str] = Field(default_factory=list, max_length=20)
+
     query: str = Field(
         ...,
         min_length=1,
@@ -72,9 +74,6 @@ class HITLApprovalRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    # NOTE: the graph's hitl_gate understands APPROVE / REJECT / EDIT (an EDIT
-    # must carry overrides.tool_calls). "OVERRIDE" here is a UI-facing alias
-    # that must map to EDIT, otherwise the gate fails closed to REJECT.
     action: Literal["APPROVE", "REJECT", "EDIT", "OVERRIDE"] = Field(
         ..., description="Compliance review action"
     )

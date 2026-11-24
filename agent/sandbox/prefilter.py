@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import ast
 
-# Permitted standard and scientific computing modules
 SAFE_MODULES: set[str] = {
     "math",
     "cmath",
@@ -25,15 +24,9 @@ SAFE_MODULES: set[str] = {
     "functools",
     "bisect",
     "heapq",
-    "numpy",
-    "pandas",
-    "scipy",
-    "scipy.stats",
-    "scipy.optimize",
-    "sympy",
 }
 
-# Explicitly forbidden builtins and execution primitives
+
 FORBIDDEN_CALLS: set[str] = {
     "eval",
     "exec",
@@ -55,7 +48,7 @@ FORBIDDEN_CALLS: set[str] = {
     "quit",
 }
 
-# Dangerous dunder attributes used in Python sandbox escape chains
+
 FORBIDDEN_DUNDERS: set[str] = {
     "__class__",
     "__bases__",
@@ -88,8 +81,7 @@ class SecurityASTVisitor(ast.NodeVisitor):
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
-            root_pkg = alias.name.split(".")[0]
-            if root_pkg not in SAFE_MODULES:
+            if alias.name not in SAFE_MODULES:
                 raise SandboxSecurityError(
                     f"Import of unauthorized module '{alias.name}' is strictly forbidden."
                 )
@@ -97,8 +89,7 @@ class SecurityASTVisitor(ast.NodeVisitor):
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         if node.module:
-            root_pkg = node.module.split(".")[0]
-            if root_pkg not in SAFE_MODULES:
+            if node.module not in SAFE_MODULES:
                 raise SandboxSecurityError(
                     f"Import from unauthorized module '{node.module}' is strictly forbidden."
                 )
@@ -106,11 +97,17 @@ class SecurityASTVisitor(ast.NodeVisitor):
             raise SandboxSecurityError(
                 "Relative imports are forbidden in the sandbox environment."
             )
+        for alias in node.names:
+            if (
+                alias.name.startswith("_")
+                or alias.name == "*"
+                or alias.name in FORBIDDEN_CALLS
+            ):
+                raise SandboxSecurityError("Import of protected symbols is prohibited.")
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
-        # Reject assignments of forbidden builtins outright (not just when
-        # later called): an alias like `e = eval` is itself an escape primer.
+
         if isinstance(node.value, ast.Name) and node.value.id in FORBIDDEN_CALLS:
             raise SandboxSecurityError(
                 f"Assignment of protected built-in '{node.value.id}' to a variable "
@@ -128,7 +125,7 @@ class SecurityASTVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
-        if node.attr in FORBIDDEN_DUNDERS:
+        if node.attr.startswith("_") or node.attr in FORBIDDEN_DUNDERS:
             raise SandboxSecurityError(
                 f"Access to introspection attribute '{node.attr}' is prohibited (sandbox escape defense)."
             )

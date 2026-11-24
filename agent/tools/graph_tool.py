@@ -4,27 +4,19 @@ from __future__ import annotations
 
 import os
 import re
+from threading import Lock
 from typing import Any
 
-from neo4j import Driver, GraphDatabase
+from neo4j import READ_ACCESS, Driver, GraphDatabase, Query
 from pydantic import BaseModel, Field
 
 from agent.tools.base import ToolResult
+from ingestion.graph_loader import slugify as _slugify
 
 FORBIDDEN_CYPHER_MUTATIONS = re.compile(
     r"\b(CREATE|MERGE|SET|DELETE|DETACH|REMOVE|DROP|ALTER|CALL\s+apoc\.periodic)\b",
     re.IGNORECASE,
 )
-
-
-def _slugify(value: str) -> str:
-    """Mirrors ingestion.graph_loader.slugify — must stay byte-identical so
-    metric/company IDs built here match the IDs written at load time.
-    (ingestion cannot import from agent, hence the local copy.)"""
-    v = (value or "").strip().lower()
-    v = re.sub(r"[^a-z0-9]+", "_", v)
-    v = re.sub(r"_+", "_", v).strip("_")
-    return v or "unknown"
 
 
 class GraphQueryInput(BaseModel):
@@ -50,6 +42,20 @@ class GraphMetricRecord(BaseModel):
     normalized_amount: float | None
     column_index: int | None = None
     column_header: str | None = None
+    evidence_id: str | None = None
+    table_id: str | None = None
+    row_index: int | None = None
+    row_evidence_id: str | None = None
+    source_file: str | None = None
+    page: int | None = None
+    raw: str | None = None
+    unit_label: str | None = None
+    currency: str | None = None
+    quantity_kind: str | None = None
+    is_percentage: bool | None = None
+    scale_multiplier: float | None = None
+    units_ambiguous: bool | None = None
+    gold_id: str | None = None
 
 
 class GraphQueryOutput(BaseModel):
@@ -79,18 +85,33 @@ class GraphRetrievalTool:
         )
         self.database = database
         self._driver: Driver | None = None
+        self._driver_lock = Lock()
 
     def _get_driver(self) -> Driver:
-        if self._driver is None:
-            self._driver = GraphDatabase.driver(
-                self.uri, auth=(self.user, self.password)
-            )
-        return self._driver
+        with self._driver_lock:
+            if self._driver is None:
+                self._driver = GraphDatabase.driver(
+                    self.uri,
+                    auth=(self.user, self.password),
+                    connection_timeout=3,
+                    connection_acquisition_timeout=5,
+                )
+            return self._driver
 
     def close(self) -> None:
-        if self._driver is not None:
-            self._driver.close()
-            self._driver = None
+        with self._driver_lock:
+            if self._driver is not None:
+                self._driver.close()
+                self._driver = None
+
+    def read_rows(self, cypher: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+        with self._get_driver().session(
+            database=self.database, default_access_mode=READ_ACCESS
+        ) as session:
+            return [
+                record.data()
+                for record in session.run(Query(cypher, timeout=15), params)
+            ]
 
     def query_metrics(
         self,
@@ -99,178 +120,50 @@ class GraphRetrievalTool:
         year: int | None = None,
         record_id: str | None = None,
     ) -> GraphQueryOutput:
-        # Anchor requirement: an unanchored query (UNKNOWN company + no metric
-        # + no year + no record_id) matches half the graph via fuzzy CONTAINS
-        # and returns arbitrary rows that pollute downstream synthesis.
-        if (
-            company_identifier.strip().upper() in {"UNKNOWN", "N/A", ""}
-            and metric_name is None
-            and year is None
-            and record_id is None
-        ):
+        company = company_identifier.strip().lower()
+        if company in {"unknown", "n/a", ""} and not record_id:
             return GraphQueryOutput(
-                company_identifier=company_identifier,
-                records=[],
-                total_found=0,
+                company_identifier=company_identifier, records=[], total_found=0
             )
-
-        driver = self._get_driver()
-
-        slug_comp = company_identifier.strip().lower()
-        company_id = f"company::{slug_comp}"
-        # Loader writes company IDs from FULL company names ("Amazon Inc" ->
-        # company::amazon_inc), while callers usually pass tickers ("AMZN" ->
-        # company::amzn). Match both exact forms; the name CONTAINS below is
-        # the natural-language fallback.
-        company_id_slug = f"company::{_slugify(company_identifier)}"
-
-        clean_metric = (
-            (metric_name or "").strip().lower().replace("_", " ").replace("-", " ")
-        )
-        # Word-level matching: questions use singular forms ("payment volume")
-        # while headers store plurals ("payments volume ( billions )"). Full
-        # -phrase CONTAINS fails on that 's'; per-word substring matching
-        # survives it ("payment" ⊂ "payments"). Row label OR column header.
-        metric_words = [w for w in clean_metric.split() if w]
-        # Loader writes Metric IDs slugged ("operating income" ->
-        # metric::operating_income); building the ID the same way here is what
-        # makes the m.id = $metric_id exact path ever fire.
-        metric_id = f"metric::{_slugify(metric_name)}" if metric_name else None
-
-        # Query strategy: strictest filter first, then RELAX. FinQA tables are
-        # messy (transposed layouts, years as row labels, unparsed header
-        # years), so a strict year+metric filter legitimately returns zero rows
-        # even when the company has the data. The tool maximizes recall and
-        # lets downstream relevance filtering + the grounding gate handle
-        # precision.
-        #
-        # Two shapes:
-        # - ANCHORED (record_id set): match the Report directly. The record id
-        #   is the filing the question is about and is NEVER relaxed — a
-        #   company-wide fallback re-introduces the cross-filing duplicate
-        #   flood that buried gold rows under identical labels from other
-        #   filings' tables.
-        # - UNANCHORED: company predicate + filters, relaxed per the ladder.
-        #
-        # Year matching treats v.year IS NULL as a wildcard: ~41% of Values
-        # have no parseable header year (transposed tables, metric-name
-        # headers), and strict equality silently excluded all of them.
-        def _build_cypher(anchored: bool, metric_filter: str, year_filter: str) -> str:
-            if anchored:
-                match_clause = """
-        MATCH (c:Company)-[:FILED]->(r:Report {record_id: $record_id})
-        MATCH (r)-[:CONTAINS_TABLE]->(t:Table)-[:HAS_ROW]->(rw:Row)-[:HAS_VALUE]->(v:Value)"""
-            else:
-                match_clause = """
-        MATCH (c:Company)
-        WHERE c.id = $company_id
-           OR c.id = $company_id_slug
-           OR toLower(c.name) CONTAINS $company_slug
-        MATCH (c)-[:FILED]->(r:Report)
-        MATCH (r)-[:CONTAINS_TABLE]->(t:Table)-[:HAS_ROW]->(rw:Row)-[:HAS_VALUE]->(v:Value)"""
-            return f"""{match_clause}
-        WHERE {year_filter} AND {metric_filter}
-        OPTIONAL MATCH (m:Metric)-[:MEASURED_BY]->(rw)
-        WITH c, r, rw, v, m,
-             CASE
-                 WHEN $metric_name IS NOT NULL AND m.id = $metric_id THEN -1000
-                 ELSE -(size([w IN $metric_words
-                       WHERE toLower(rw.label) CONTAINS w
-                          OR toLower(coalesce(v.column_header, '')) CONTAINS w]))
-             END AS relevance
-        RETURN DISTINCT
-            c.name AS company,
-            r.record_id AS report_id,
-            rw.label AS row_label,
-            rw.category AS category,
-            v.year AS year,
-            v.amount AS amount,
-            v.normalized_amount AS normalized_amount,
-            v.column_index AS column_index,
-            v.column_header AS column_header,
-            relevance
-        ORDER BY relevance, v.year DESC, rw.label ASC
-        LIMIT 150
-        """
-
-        def _run(cypher: str) -> list[GraphMetricRecord]:
-            with driver.session(database=self.database) as session:
-                result = session.run(cypher, params)
-                return [
-                    GraphMetricRecord(
-                        company=row["company"],
-                        report_id=row["report_id"],
-                        row_label=row["row_label"],
-                        category=row["category"],
-                        year=row["year"],
-                        amount=row["amount"],
-                        normalized_amount=row["normalized_amount"],
-                        column_index=row["column_index"],
-                        column_header=row["column_header"],
-                    )
-                    for row in result
-                ]
 
         params = {
-            "company_id": company_id,
-            "company_id_slug": company_id_slug,
-            "company_slug": slug_comp,
+            "company_ids": [
+                f"company::{company}",
+                f"company::{_slugify(company_identifier)}",
+            ],
+            "company_name": company,
             "record_id": record_id,
             "year": year,
-            "metric_name": metric_name,
-            "metric_id": metric_id,
-            "metric_clean": clean_metric,
-            "metric_words": metric_words,
+            "metric_id": f"metric::{_slugify(metric_name)}" if metric_name else None,
+            "metric_words": _slugify(metric_name).split("_") if metric_name else [],
         }
-
-        # Filters are single WHERE predicates (year AND metric combined by the
-        # builder). "Relaxed" metric filter must be a neutral predicate:
-        # $metric_name is still bound (non-NULL) in params, so a
-        # `$metric_name IS NULL` rung would filter out every row. `true` keeps
-        # the rows while the relevance CASE still ranks label/header matches
-        # first.
-        no_metric = "true"
-        # Self-contained on rw/v: WHERE runs before the OPTIONAL MATCH that
-        # defines `m`, so the metric-id equality path lives only in the
-        # relevance CASE. Word-level matching: every hint word must appear in
-        # the row label or column header.
-        strict_metric = (
-            "($metric_name IS NULL OR size($metric_words) = 0 OR "
-            "all(w IN $metric_words WHERE "
-            "toLower(rw.label) CONTAINS w "
-            "OR toLower(coalesce(v.column_header, '')) CONTAINS w))"
-        )
-        year_where = "($year IS NULL OR v.year IS NULL OR v.year = $year)"
-        no_year = "true"
-
-        records: list[GraphMetricRecord] = []
-        if record_id is not None:
-            # Anchored ladder: relax metric, then year — never the record.
-            for metric_filter, year_filter in [
-                (strict_metric, year_where),
-                (no_metric, year_where),
-                (strict_metric, no_year),
-                (no_metric, no_year),
-            ]:
-                records = _run(_build_cypher(True, metric_filter, year_filter))
-                if records:
-                    break
-            return GraphQueryOutput(
-                company_identifier=company_identifier,
-                records=records,
-                total_found=len(records),
-            )
-
-        # Unanchored ladder: metric -> year -> company-wide sweep.
-        for metric_filter, year_filter in [
-            (strict_metric, year_where),
-            (no_metric, year_where),
-            (no_metric, no_year),
-        ]:
-            records = _run(_build_cypher(False, metric_filter, year_filter))
-            if records:
-                break
-
+        cypher = """
+        MATCH (c:Company)-[:FILED]->(r:Report)
+        WHERE ($record_id IS NOT NULL AND r.record_id = $record_id)
+           OR ($record_id IS NULL AND (c.id IN $company_ids OR toLower(c.name) = $company_name))
+        MATCH (r)-[:CONTAINS_TABLE]->(t:Table)-[:HAS_ROW]->(rw:Row)-[:HAS_VALUE]->(v:Value)
+        WHERE v.amount IS NOT NULL AND ($year IS NULL OR v.year = $year)
+        WITH c, r, t, rw, v,
+             EXISTS { MATCH (m:Metric {id: $metric_id})-[:MEASURED_BY]->(rw) } AS exact_metric
+        WHERE exact_metric OR all(w IN $metric_words
+            WHERE toLower(rw.label) CONTAINS w OR toLower(coalesce(v.column_header, '')) CONTAINS w)
+        RETURN c.name AS company, r.record_id AS report_id, r.source_file AS source_file,
+               r.page AS page, t.id AS table_id,
+               rw.label AS row_label, rw.category AS category, rw.source_row_index AS row_index,
+               rw.evidence_id AS row_evidence_id, rw.gold_id AS gold_id,
+               v.year AS year, v.amount AS amount, v.normalized_amount AS normalized_amount,
+               v.column_index AS column_index, v.column_header AS column_header,
+               v.evidence_id AS evidence_id, v.raw AS raw, v.unit_label AS unit_label,
+               v.quantity_kind AS quantity_kind, v.currency AS currency,
+               v.scale_multiplier AS scale_multiplier, v.is_percentage AS is_percentage,
+               v.units_ambiguous AS units_ambiguous
+        ORDER BY exact_metric DESC, year DESC, report_id, row_index, column_index
+        LIMIT 150
+        """
+        records = [
+            GraphMetricRecord.model_validate(row)
+            for row in self.read_rows(cypher, params)
+        ]
         return GraphQueryOutput(
             company_identifier=company_identifier,
             records=records,
@@ -286,10 +179,7 @@ class GraphRetrievalTool:
                 "Write or schema-modifying Cypher statements are strictly prohibited"
             )
 
-        driver = self._get_driver()
-        with driver.session(database=self.database) as session:
-            result = session.run(cypher_query, params)
-            return [dict(record) for record in result]
+        return self.read_rows(cypher_query, params)
 
 
 def list_company_record_ids(
@@ -305,27 +195,27 @@ def list_company_record_ids(
     slug = (company_identifier or "").strip().lower()
     if slug in {"", "unknown", "n/a"}:
         return []
-    instance = client or GraphRetrievalTool()
+    from agent.tools._clients import get_graph_tool_client
+
+    instance: GraphRetrievalTool = client or get_graph_tool_client()
     cypher = """
     MATCH (c:Company)-[:FILED]->(r:Report)
-    WHERE c.id = $company_id OR c.id = $company_id_slug
-       OR toLower(c.name) CONTAINS $company_slug
+    WHERE c.id IN $company_ids OR toLower(c.name) = $company_name
     RETURN DISTINCT r.record_id AS record_id
+    ORDER BY record_id
     """
     try:
-        with instance._get_driver().session(database=instance.database) as session:
-            return [
-                row["record_id"]
-                for row in session.run(
-                    cypher,
-                    {
-                        "company_id": f"company::{slug}",
-                        "company_id_slug": f"company::{_slugify(company_identifier)}",
-                        "company_slug": slug,
-                    },
-                )
-                if row["record_id"]
-            ]
+        rows = instance.read_rows(
+            cypher,
+            {
+                "company_ids": [
+                    f"company::{slug}",
+                    f"company::{_slugify(company_identifier)}",
+                ],
+                "company_name": slug,
+            },
+        )
+        return [str(row["record_id"]) for row in rows if row["record_id"]]
     except Exception:
         return []
 
@@ -334,7 +224,9 @@ def graph_retrieval_tool(
     payload: GraphQueryInput, client: GraphRetrievalTool | None = None
 ) -> ToolResult[GraphQueryOutput]:
     """Instrumented tool entrypoint for structured graph retrieval."""
-    instance = client or GraphRetrievalTool()
+    from agent.tools._clients import get_graph_tool_client
+
+    instance: GraphRetrievalTool = client or get_graph_tool_client()
     return ToolResult.execute_instrumented(
         tool_name="graph_retrieval",
         fn=instance.query_metrics,

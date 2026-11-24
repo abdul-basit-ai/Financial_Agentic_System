@@ -16,9 +16,8 @@ from typing import Any
 
 import pytest
 
-# Thresholds for CI/CD gating
-MIN_NUMERIC_EXTRACTION_RATE = 0.95  # >= 95% of digit-bearing cells must yield numbers
-MAX_MISSING_PROGRAM_RATE = 0.05  # < 5% unparsed programs in train/dev
+MIN_NUMERIC_EXTRACTION_RATE = 0.95
+MAX_MISSING_PROGRAM_RATE = 0.05
 EXPECTED_SPLITS = ["train", "dev", "test"]
 
 DIGIT_CELL_RE = re.compile(r"\d")
@@ -49,11 +48,6 @@ def load_jsonl(path: str | Path) -> list[dict[str, Any]]:
                     f"Malformed JSON on line {line_no} in {path}: {exc}"
                 ) from exc
     return records
-
-
-# =====================================================================
-# Integrity Metrics Engine
-# =====================================================================
 
 
 class DataIntegrityReport:
@@ -125,16 +119,13 @@ def audit_split(
     norm_records = load_jsonl(norm_path) if norm_path.exists() else []
     report.normalized_count = len(norm_records)
 
-    # 1. Check for Silent Drops
     raw_ids = {r.get("id") for r in raw_data if isinstance(r, dict)}
     norm_ids = {r.get("record_id") for r in norm_records}
     report.dropped_record_ids = raw_ids - norm_ids
 
-    # 2. Schema and Cell-Level Numeric Extraction Audit
     for rec in norm_records:
         rec_id = rec.get("record_id", "UNKNOWN")
 
-        # Required root schemas
         for section in [
             "document",
             "reasoning",
@@ -156,12 +147,10 @@ def audit_split(
         if not reasoning.get("program"):
             report.missing_programs += 1
 
-        # Check for NaN / Infinity poisoning
         ans_num = doc.get("answer_numeric")
         if ans_num is not None and (math.isnan(ans_num) or math.isinf(ans_num)):
             report.nan_inf_found += 1
 
-        # Deep audit of table normalization
         table = rec.get("table", {})
         for row in table.get("rows", []):
             for cell in row:
@@ -171,7 +160,6 @@ def audit_split(
                 if num_val is not None and (math.isnan(num_val) or math.isinf(num_val)):
                     report.nan_inf_found += 1
 
-                # If cell contains digits, verify it wasn't dropped silently
                 if NUMERIC_CELL_RE.fullmatch(
                     raw_cell
                 ) and not NON_NUMERIC_EXCLUSIONS.match(raw_cell):
@@ -188,11 +176,6 @@ def audit_split(
                             )
 
     return report
-
-
-# =====================================================================
-# Pytest Test Cases (CI/CD Automations)
-# =====================================================================
 
 
 @pytest.fixture(scope="session")
@@ -214,9 +197,6 @@ def test_zero_record_drop(pipeline_paths: dict[str, Path], split: str) -> None:
     if not raw_file.exists():
         pytest.skip(f"Raw split file missing: {raw_file}")
 
-    # data/processed/ is git-ignored (DVC-managed); CI checkouts don't have it.
-    # The zero-drop contract is enforced locally/by the ingestion pipeline;
-    # in an environment without processed artifacts this test cannot run.
     if not norm_file.exists() or not parsed_file.exists():
         pytest.skip(
             f"Processed artifacts missing for '{split}' (data/processed is "
@@ -280,11 +260,6 @@ def test_schema_validity_and_anomalies(
     assert (
         len(report.schema_violations) == 0
     ), f"Schema violations detected in '{split}': {report.schema_violations[:5]}"
-
-
-# =====================================================================
-# Standalone CLI Entrypoint
-# =====================================================================
 
 
 def main() -> int:

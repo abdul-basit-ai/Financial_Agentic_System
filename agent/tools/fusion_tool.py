@@ -47,9 +47,12 @@ def reciprocal_rank_fusion(
     scores: dict[str, float] = {}
     item_lookup: dict[str, FusedItem] = {}
 
-    # 1. Rank Graph Records (with None guards)
     for rank, g in enumerate(graph_records, start=1):
-        item_id = f"graph::{g.report_id}::{g.row_label}::{g.year}"
+        metadata = g.model_dump()
+        item_id = metadata.get("evidence_id") or (
+            f"graph::{g.report_id}::{metadata.get('table_id')}::{metadata.get('row_index')}::"
+            f"{g.row_label}::{g.year}::{g.column_index}::{g.column_header}"
+        )
         amount_str = f"{g.amount:,.2f}" if g.amount is not None else "N/A"
         base_str = (
             f"{g.normalized_amount:,.2f}" if g.normalized_amount is not None else "N/A"
@@ -57,7 +60,7 @@ def reciprocal_rank_fusion(
 
         content = (
             f"[Table Line] Company: {g.company} | Year: {g.year or 'N/A'} | "
-            f"{g.row_label} = {amount_str} (Base: {base_str})"
+            f"{g.row_label} [{g.column_header or g.year or 'N/A'}] = {amount_str} (Base: {base_str})"
         )
         rrf_contribution = graph_weight / (k + rank)
         scores[item_id] = scores.get(item_id, 0.0) + rrf_contribution
@@ -66,10 +69,9 @@ def reciprocal_rank_fusion(
             source="graph",
             content=content,
             rrf_score=0.0,
-            metadata={"category": g.category, "year": g.year},
+            metadata=metadata,
         )
 
-    # 2. Rank Vector Chunks
     for rank, v in enumerate(vector_chunks, start=1):
         item_id = f"vector::{v.record_id}::{v.section}::{v.chunk_index}"
         content = f"[Narrative - {v.section}] {v.text_content}"
@@ -80,10 +82,9 @@ def reciprocal_rank_fusion(
             source="vector",
             content=content,
             rrf_score=0.0,
-            metadata={"similarity": v.similarity_score, "record_id": v.record_id},
+            metadata=v.model_dump(),
         )
 
-    # 3. Sort by fused score
     sorted_item_ids = sorted(scores.keys(), key=lambda x: scores[x], reverse=True)
 
     fused_items: list[FusedItem] = []
@@ -95,12 +96,12 @@ def reciprocal_rank_fusion(
         item.rrf_score = round(scores[i_id], 6)
         item_block = f"{item.content}\n"
 
-        if current_char_count + len(item_block) > max_context_chars and fused_items:
-            break
+        if current_char_count + len(item_block) > max_context_chars:
+            continue
 
         fused_items.append(item)
         formatted_blocks.append(item_block)
-        current_char_count += len(item_block)
+        current_char_count += len(item_block) + 1
 
     formatted_context = "\n".join(formatted_blocks).strip()
 

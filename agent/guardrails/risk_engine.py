@@ -11,17 +11,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-# Benford's Law theoretical digit frequencies for d in 1..9
 BENFORD_EXPECTED: dict[int, float] = {
     d: math.log10(1.0 + 1.0 / d) for d in range(1, 10)
 }
-# Chi-Square critical threshold for df = 8 at alpha = 0.01
+
 CHI_SQUARE_CRITICAL_99 = 20.09
-MATERIAL_DOLLAR_THRESHOLD = 100_000_000.0  # $100M in raw table units
+MATERIAL_DOLLAR_THRESHOLD = 100_000_000.0
 MIN_VECTOR_SIMILARITY_THRESHOLD = 0.65
-MAD_Z_SCORE_THRESHOLD = 10.0  # Tight enough for true outliers (z>20 for a 3.5x
-# magnitude deviation in a same-magnitude cluster), loose enough that normal
-# financial variance within one order of magnitude (z typically < 5) passes.
+MAD_Z_SCORE_THRESHOLD = 10.0
 
 
 class RiskTriggerReason(BaseModel):
@@ -80,7 +77,6 @@ def verify_benford_law_conformity(numbers: list[float]) -> tuple[bool, float]:
             if first_char.isdigit() and int(first_char) != 0:
                 first_digits.append(int(first_char))
 
-    # Requires at least 20 numbers for valid chi-square sample size
     if len(first_digits) < 20:
         return True, 0.0
 
@@ -105,24 +101,22 @@ class FinancialRiskEngine:
         reasons: list[RiskTriggerReason] = []
         extracted_numbers: list[float] = []
 
-        # 1. Inspect Completed Tool Results
         tool_results = state_dict.get("tool_results", [])
+        active_ids = {call.get("task_id") for call in state_dict.get("tool_calls", [])}
+        if active_ids:
+            active_ids.add(f"program_{state_dict.get('iteration_count', 0)}")
+            tool_results = [
+                res for res in tool_results if res.get("task_id") in active_ids
+            ]
 
-        # Collect amounts from graph records. Feed Benford DISTINCT
-        # observations only: (amount, normalized_amount) pairs are the same
-        # underlying figure counted twice, and duplicated retrieval rows would
-        # otherwise fabricate a non-Benford distribution out of repeated
-        # identical digits (observed: chi2=88 from 20 copies of one value).
         benford_pool: list[float] = []
         seen_observations: set[tuple[Any, ...]] = set()
 
-        # Collect amounts from graph records
         for res in tool_results:
             data = res.get("data")
             if not isinstance(data, dict):
                 continue
 
-            # Graph metric records
             records = data.get("records", [])
             for r in records:
                 amt = r.get("amount")
@@ -130,26 +124,24 @@ class FinancialRiskEngine:
                 row_label = str(r.get("row_label", "")).lower()
 
                 target_val = norm_amt if norm_amt is not None else amt
+                if target_val is not None and not math.isfinite(float(target_val)):
+                    reasons.append(
+                        RiskTriggerReason(
+                            category="INTEGRITY",
+                            severity="CRITICAL",
+                            message="A source value is not finite.",
+                        )
+                    )
+                    continue
                 if target_val is not None:
                     extracted_numbers.append(float(target_val))
 
-                # Benford pool: RAW amounts, one distinct observation per
-                # (row_label, value). normalized_amount is the same figure at a
-                # different scale — it preserves the leading digit, so feeding
-                # both doubles every digit count and biases the distribution.
-                # Duplicate rows (same row+value retrieved twice) are also the
-                # same observation and must not inflate the pool.
                 if amt is not None:
                     key = (r.get("row_label"), round(float(amt), 6))
                     if key not in seen_observations:
                         seen_observations.add(key)
                         benford_pool.append(float(amt))
 
-                # Check Extreme Margins (> 100% or < -100%). Fires only with
-                # percent CONTEXT: '%' in the row label or column header. A
-                # transposed table can name a row "gross margin" while storing
-                # raw dollar figures (688 = $688, not 688%) — flagging that
-                # paused nearly every benchmark query at the HITL gate.
                 column_header = str(r.get("column_header", "")).lower()
                 has_percent_context = "%" in row_label or "%" in column_header
                 if (
@@ -167,24 +159,21 @@ class FinancialRiskEngine:
                             )
                         )
 
-                # Check Material Transactions on RAW amounts (table-native units).
-                # normalized_amount multiplies by 1e6/1e9 for 'in millions'
-                # filings — using it would flag every large filing as material
-                # (false-positive alarm fatigue). Raw table values are the
-                # auditor-comparable figure; threshold $100M (raw).
-                if amt is not None and abs(float(amt)) >= MATERIAL_DOLLAR_THRESHOLD:
+                if (
+                    target_val is not None
+                    and abs(float(target_val)) >= MATERIAL_DOLLAR_THRESHOLD
+                    and r.get("quantity_kind", "currency")
+                    not in {"shares", "percent", "per_share", "ratio"}
+                ):
                     reasons.append(
                         RiskTriggerReason(
                             category="MATERIALITY",
                             severity="HIGH",
-                            message=f"Material figure exceeding threshold on '{r.get('row_label')}': {float(amt):,.2f} (table units)",
-                            metric_value=float(amt),
+                            message=f"Material figure exceeding threshold on '{r.get('row_label')}': {float(target_val):,.2f} (normalized units)",
+                            metric_value=float(target_val),
                         )
                     )
 
-            # Vector chunk confidence checks — one signal per retrieval call,
-            # not one per chunk: a single retrieval returning 5 mediocre
-            # chunks is one confidence observation, not five escalations.
             chunks = data.get("chunks", [])
             chunk_sims = [
                 float(c["similarity_score"])
@@ -203,10 +192,18 @@ class FinancialRiskEngine:
                         )
                     )
 
-            # Math results check (Extreme percentages / Division anomalies)
             math_result = data.get("result")
             expr = str(data.get("expression", ""))
             if math_result is not None:
+                if not math.isfinite(float(math_result)):
+                    reasons.append(
+                        RiskTriggerReason(
+                            category="INTEGRITY",
+                            severity="CRITICAL",
+                            message="A calculated result is not finite.",
+                        )
+                    )
+                    continue
                 extracted_numbers.append(float(math_result))
                 if (
                     any(w in expr.lower() for w in ["growth", "change", "margin"])
@@ -221,12 +218,6 @@ class FinancialRiskEngine:
                         )
                     )
 
-        # 2. Statistical Outlier Detection (MAD) — within same-magnitude clusters
-        # Financial filings legitimately mix scales (thousands/millions/billions
-        # in one table). Raw MAD across mixed magnitudes flags every small line
-        # next to a large one (z > 100 observed), which is noise, not anomaly.
-        # Cluster values by order of magnitude and detect outliers WITHIN a
-        # cluster (needs >= 4 comparable values to be meaningful).
         magnitude_clusters: dict[int, list[float]] = {}
         for num in extracted_numbers:
             if num == 0.0:
@@ -249,13 +240,6 @@ class FinancialRiskEngine:
                         )
                     )
 
-        # 3. Benford's Law Data Integrity Check (distinct observations only)
-        # Statistical caveat: Benford is fragile on small, topically-clustered
-        # samples — a single query's evidence pool (often 20-40 values heavy in
-        # one topic, e.g. many 2-prefixed years/figures) routinely exceeds
-        # chi2=20 without any corruption. Fire only on a meaningful sample
-        # AND a gross violation (2x critical); downgrade to MEDIUM so it
-        # requires corroboration rather than single-handedly pausing runs.
         benford_ok, chi_sq = verify_benford_law_conformity(benford_pool)
         if (
             not benford_ok
@@ -271,16 +255,6 @@ class FinancialRiskEngine:
                 )
             )
 
-        # 4. Composite Risk Score Formulation
-        # HIGH/CRITICAL triggers escalate immediately; MEDIUM/LOW reasons are
-        # informational UNLESS they accumulate heavily. A couple of mediocre
-        # vector matches (2x MEDIUM = 0.7) hitting the composite ceiling would
-        # escalate nearly every generic query -> HITL alarm fatigue.
-        #
-        # Reasons dedupe per (category, message): a 150-row retrieval sweep
-        # fires the same materiality trigger on dozens of rows, and N copies
-        # of one observation saturate the composite (0.7 each) into a spurious
-        # HITL pause. One observation, one reason.
         deduped: list[RiskTriggerReason] = []
         seen_reasons: set[str] = set()
         for r in reasons:
@@ -299,8 +273,7 @@ class FinancialRiskEngine:
         has_escalation_trigger = any(
             r.severity in {"HIGH", "CRITICAL"} for r in reasons
         )
-        # MEDIUM-only noise requires 3+ simultaneous reasons to cross 0.7 via
-        # the composite; direct composite escalation needs >= 1.0 (saturation).
+
         requires_hitl = has_escalation_trigger or composite_score >= 1.0
 
         return RiskAssessmentResult(

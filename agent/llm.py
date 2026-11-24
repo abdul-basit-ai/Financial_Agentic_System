@@ -34,10 +34,37 @@ class LLMCallResult:
     model: str
     prompt_tokens: int
     completion_tokens: int
-    cost_usd: float
+    cost_usd: float | None
 
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+
+_TASK_MODELS = {
+    "planner": "PLANNER_MODEL",
+    "program": "PROGRAM_MODEL",
+    "verifier": "PROGRAM_VERIFIER_MODEL",
+    "synthesis": "SYNTHESIS_MODEL",
+    "document_reasoning": "DOCUMENT_REASONING_MODEL",
+    "extraction": "EXTRACTION_MODEL",
+}
+
+
+def model_for_task(task: str) -> str:
+    variable = _TASK_MODELS.get(task)
+    configured = os.getenv(variable, "").strip() if variable else ""
+    return configured or os.getenv("OPENAI_MODEL", "").strip() or "gpt-4o-mini"
+
+
+def llm_usage_entry(stage: str, result: LLMCallResult | None) -> dict[str, Any]:
+    return {
+        "stage": stage,
+        "model": result.model if result else model_for_task(stage),
+        "status": "completed" if result else "failed",
+        "prompt_tokens": getattr(result, "prompt_tokens", None),
+        "completion_tokens": getattr(result, "completion_tokens", None),
+        "cost_usd": getattr(result, "cost_usd", None),
+    }
 
 
 def _api_key() -> str:
@@ -52,7 +79,7 @@ def _api_key() -> str:
 
 def is_llm_enabled() -> bool:
     """True when a usable OpenAI/OpenRouter API key is configured."""
-    return bool(_api_key())
+    return os.getenv("FINAGENT_DISABLE_LLM", "0") != "1" and bool(_api_key())
 
 
 def _default_base_url() -> str:
@@ -87,6 +114,8 @@ _model_cache: dict[str, _ModelHandle] = {}
 
 def _get_model(model_name_override: str | None = None) -> _ModelHandle | None:
     """Constructs the chat model once per process; None when unconfigured."""
+    if os.getenv("FINAGENT_DISABLE_LLM", "0") == "1":
+        return None
     _load_env_file()
     if not is_llm_enabled():
         return None
@@ -112,11 +141,7 @@ def _get_model(model_name_override: str | None = None) -> _ModelHandle | None:
         base_url = os.getenv("OPENAI_BASE_URL", "").strip() or _default_base_url()
         if base_url:
             kwargs["base_url"] = base_url
-        # Reasoning models served via OpenRouter (DeepSeek-R family etc.) can
-        # spend the ENTIRE max_tokens budget on invisible reasoning and return
-        # empty content — the planner then always falls back to rules. Disable
-        # reasoning on the OpenRouter path by default; opt back in with
-        # OPENROUTER_DISABLE_REASONING=0.
+
         if (
             base_url == OPENROUTER_BASE_URL
             and os.getenv("OPENROUTER_DISABLE_REASONING", "1").strip() != "0"
@@ -127,7 +152,7 @@ def _get_model(model_name_override: str | None = None) -> _ModelHandle | None:
         return handle
     except Exception as exc:
         print(
-            f"[llm] Chat model unavailable ({type(exc).__name__}: {exc}); "
+            f"[llm] Chat model unavailable ({type(exc).__name__}); "
             f"falling back to deterministic behavior.",
             flush=True,
         )
@@ -148,6 +173,7 @@ def invoke_llm(
     max_tokens: int = 1024,
     temperature: float | None = None,
     model_name: str | None = None,
+    task: str = "general",
 ) -> LLMCallResult | None:
     """Runs one completion; returns None when LLM is unconfigured or fails.
 
@@ -157,7 +183,7 @@ def invoke_llm(
 
     Never raises — callers treat None as "use the deterministic fallback".
     """
-    handle = _get_model(model_name)
+    handle = _get_model(model_name or model_for_task(task))
     if handle is None:
         return None
 
@@ -178,7 +204,7 @@ def invoke_llm(
         )
     except Exception as exc:
         print(
-            f"[llm] invocation failed ({type(exc).__name__}: {exc}); "
+            f"[llm] invocation failed ({type(exc).__name__}); "
             f"falling back to deterministic behavior.",
             flush=True,
         )
@@ -186,24 +212,12 @@ def invoke_llm(
 
     raw_content = getattr(response, "content", "") or ""
     if isinstance(raw_content, list):
-        # langchain content blocks: [{'type': 'text', 'text': '...'}, ...] —
-        # some OpenRouter models (reasoning disabled) return arrays, and
-        # str() of that list is unparseable downstream.
+
         raw_content = "".join(
             block.get("text", "") if isinstance(block, dict) else str(block)
             for block in raw_content
         )
     content = str(raw_content)
-    if not content.strip():
-        # Empty completion: with reasoning models this means the token budget
-        # went to reasoning and no content was produced. Surface it — a silent
-        # empty string made the planner fall back to rules invisibly.
-        print(
-            f"[llm] empty completion from {handle.model_name}; "
-            f"falling back to deterministic behavior.",
-            flush=True,
-        )
-        return None
     usage = getattr(response, "usage_metadata", None) or {}
     prompt_tokens = int(usage.get("input_tokens", 0) or 0)
     completion_tokens = int(usage.get("output_tokens", 0) or 0)

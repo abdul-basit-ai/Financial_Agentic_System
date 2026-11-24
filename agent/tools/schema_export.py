@@ -17,6 +17,7 @@ from agent.tools.decomposer import DecompositionInput, DecompositionOutput
 from agent.tools.fusion_tool import ContextFusionInput, ContextFusionOutput
 from agent.tools.graph_tool import GraphQueryInput, GraphQueryOutput
 from agent.tools.safe_math import SafeMathInput, SafeMathOutput
+from agent.tools.table_tool import TableExtractInput, TableExtractOutput
 from agent.tools.vector_tool import VectorSearchInput, VectorSearchOutput
 
 SCHEMA_DIR = os.path.join(os.path.dirname(__file__), "schemas")
@@ -33,6 +34,10 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "vector_retrieval": {
         "input": VectorSearchInput.model_json_schema(),
         "output": VectorSearchOutput.model_json_schema(),
+    },
+    "table_extract": {
+        "input": TableExtractInput.model_json_schema(),
+        "output": TableExtractOutput.model_json_schema(),
     },
     "context_fusion": {
         "input": ContextFusionInput.model_json_schema(),
@@ -66,9 +71,11 @@ def export_schemas(out_dir: str = SCHEMA_DIR) -> dict[str, str]:
     return written
 
 
-def load_tool_schema(tool_name: str) -> dict[str, Any] | None:
+def load_tool_schema(
+    tool_name: str, schema_dir: str | None = None
+) -> dict[str, Any] | None:
     """Loads a previously exported schema (used by Phase 10 MCP server)."""
-    path = os.path.join(SCHEMA_DIR, f"{tool_name}_schema.json")
+    path = os.path.join(schema_dir or SCHEMA_DIR, f"{tool_name}_schema.json")
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as f:

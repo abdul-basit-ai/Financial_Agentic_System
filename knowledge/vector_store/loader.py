@@ -13,11 +13,16 @@ from typing import Any
 
 import psycopg2
 from psycopg2.extras import execute_values
-from sentence_transformers import SentenceTransformer
+
+from knowledge.vector_store.search import (
+    EMBEDDING_DIM,
+    EMBEDDING_MODEL_NAME,
+    embedding_model_name,
+    embedding_values,
+    search_embeddings,
+)
 
 SPLITS = ["train", "dev", "test", "private_test"]
-EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
-EMBEDDING_DIM = 384
 
 DDL_SCHEMA = f"""
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -35,10 +40,11 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     embedding vector({EMBEDDING_DIM})
 );
 
--- sentence_start/sentence_end were added after the initial schema shipped;
--- ALTER IF NOT EXISTS keeps pre-existing tables loadable.
 ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS sentence_start INT;
 ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS sentence_end INT;
+ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS provenance_version INT;
+ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS embedding_model TEXT
+    NOT NULL DEFAULT '{EMBEDDING_MODEL_NAME}';
 
 CREATE UNIQUE INDEX IF NOT EXISTS chunk_unique_idx
 ON document_chunks (record_id, section, chunk_index);
@@ -46,10 +52,6 @@ ON document_chunks (record_id, section, chunk_index);
 CREATE INDEX IF NOT EXISTS chunk_record_idx
 ON document_chunks (record_id);
 
--- NOTE: the ivfflat index is intentionally NOT created here. On an empty or
--- tiny table the index clusters are unpopulated and approximate search can
--- silently return zero/near-zero rows. ensure_vector_index() builds it
--- lazily once the table holds enough rows (mirrors episodic.py).
 """
 
 
@@ -69,7 +71,7 @@ class VectorStoreLoader:
         dbname: str = "financial_agent",
         user: str = "postgres",
         password: str = "password",
-        model_name: str = EMBEDDING_MODEL_NAME,
+        model_name: str | None = None,
     ) -> None:
         self.conn_params: dict[str, Any] = {
             "host": host,
@@ -79,7 +81,10 @@ class VectorStoreLoader:
             "password": password,
             "connect_timeout": 3,
         }
-        self.model = SentenceTransformer(model_name)
+        from sentence_transformers import SentenceTransformer
+
+        self.model_name = embedding_model_name(model_name)
+        self.model = SentenceTransformer(self.model_name)
         self._conn = None
 
     def connect(self) -> None:
@@ -91,9 +96,8 @@ class VectorStoreLoader:
 
     def create_schema(self) -> None:
         assert self._conn is not None
-        with self._conn.cursor() as cur:
+        with self._conn, self._conn.cursor() as cur:
             cur.execute(DDL_SCHEMA)
-        self._conn.commit()
 
     def ensure_vector_index(self, min_rows: int = 1000, lists: int = 100) -> bool:
         """Creates the ivfflat index once the table is large enough to populate it.
@@ -134,10 +138,7 @@ class VectorStoreLoader:
             text = str(ch.get("text", "")).strip()
             if not text:
                 continue
-            # Low-quality windows (chart-to-text '.' padding) are excluded
-            # from the embedding corpus entirely: identical dot strings
-            # embed as a dense garbage cluster that crowds real chunks out
-            # of small top-k budgets.
+
             if ch.get("low_quality"):
                 continue
             section = str(ch.get("source", "context"))
@@ -153,76 +154,86 @@ class VectorStoreLoader:
                     sentence_start if isinstance(sentence_start, int) else None,
                     sentence_end if isinstance(sentence_end, int) else None,
                     text,
+                    2 if ctx.get("source_indices_explicit") else None,
                 )
             )
         return rows
 
-    def insert_batch(self, rows_batch: list[tuple[Any, ...]]) -> int:
-        if not rows_batch:
+    def insert_batch(
+        self,
+        rows_batch: list[tuple[Any, ...]],
+        *,
+        replace_record_ids: list[str] | None = None,
+    ) -> int:
+        if not rows_batch and not replace_record_ids:
             return 0
         assert self._conn is not None
 
         texts = [r[7] for r in rows_batch]
-        embeddings = self.model.encode(
-            texts, show_progress_bar=False, normalize_embeddings=True
+        embeddings = (
+            self.model.encode(texts, show_progress_bar=False, normalize_embeddings=True)
+            if texts
+            else []
         )
 
         payload = [
-            (r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], embeddings[i].tolist())
-            for i, r in enumerate(rows_batch)
+            (*row, self.model_name, embedding_values(embedding))
+            for row, embedding in zip(rows_batch, embeddings, strict=True)
         ]
 
         query = """
         INSERT INTO document_chunks (
             record_id, filename, split, section, chunk_index,
-            sentence_start, sentence_end, text_content, embedding
+            sentence_start, sentence_end, text_content, provenance_version, embedding_model, embedding
         ) VALUES %s
         ON CONFLICT (record_id, section, chunk_index)
         DO UPDATE SET
+            filename = EXCLUDED.filename,
+            split = EXCLUDED.split,
             sentence_start = EXCLUDED.sentence_start,
             sentence_end = EXCLUDED.sentence_end,
             text_content = EXCLUDED.text_content,
+            provenance_version = EXCLUDED.provenance_version,
+            embedding_model = EXCLUDED.embedding_model,
             embedding = EXCLUDED.embedding;
         """
 
-        with self._conn.cursor() as cur:
-            execute_values(cur, query, payload)
-        self._conn.commit()
+        with self._conn, self._conn.cursor() as cur:
+            if replace_record_ids:
+                record_ids = sorted(set(replace_record_ids))
+                cur.execute(
+                    """
+                    SELECT pg_advisory_xact_lock(hashtextextended(id, 0))
+                    FROM unnest(%s::text[]) AS ids(id)
+                    ORDER BY id
+                    """,
+                    (record_ids,),
+                )
+                cur.execute(
+                    "DELETE FROM document_chunks WHERE record_id = ANY(%s)",
+                    (record_ids,),
+                )
+            if payload:
+                execute_values(cur, query, payload)
         return len(payload)
 
     def query_similarity(
         self, text: str, top_k: int = 5, record_id: str | None = None
     ) -> list[dict[str, Any]]:
         assert self._conn is not None
-        query_emb = self.model.encode(text, normalize_embeddings=True).tolist()
-
-        sql = """
-        SELECT record_id, section, chunk_index, text_content, 1 - (embedding <=> %(embedding)s::vector) AS similarity
-        FROM document_chunks
-        WHERE (%(record_id)s IS NULL OR record_id = %(record_id)s)
-        ORDER BY embedding <=> %(embedding)s::vector
-        LIMIT %(limit)s;
-        """
-        # Pass str(query_emb) so psycopg2 formats '[...]' rather than a
-        # PostgreSQL array '{...}' — the ::vector cast only accepts the former.
-        with self._conn.cursor() as cur:
-            cur.execute(
-                sql,
-                {
-                    "embedding": str(query_emb),
-                    "record_id": record_id,
-                    "limit": top_k,
-                },
+        query_emb = embedding_values(self.model.encode(text, normalize_embeddings=True))
+        with self._conn:
+            results = search_embeddings(
+                self._conn, query_emb, self.model_name, top_k, record_id=record_id
             )
-            results = cur.fetchall()
 
         return [
             {
                 "record_id": r[0],
-                "section": r[1],
-                "chunk_index": r[2],
-                "text_content": r[3],
-                "similarity": float(r[4]),
+                "section": r[2],
+                "chunk_index": r[3],
+                "text_content": r[4],
+                "similarity": float(r[5]),
             }
             for r in results
         ]
@@ -261,6 +272,7 @@ def main() -> None:
         loader.create_schema()
         total_chunks = 0
         current_batch: list[tuple[Any, ...]] = []
+        current_records: list[str] = []
 
         for split in args.splits:
             path = os.path.join(args.normalized_dir, f"finqa_{split}_normalized.jsonl")
@@ -268,22 +280,24 @@ def main() -> None:
                 continue
             for rec in read_jsonl(path):
                 rows = loader.load_chunks_from_record(rec)
+                current_records.append(rec["record_id"])
                 current_batch.extend(rows)
-                if len(current_batch) >= args.batch_size:
-                    inserted = loader.insert_batch(current_batch)
+                if max(len(current_batch), len(current_records)) >= args.batch_size:
+                    inserted = loader.insert_batch(
+                        current_batch, replace_record_ids=current_records
+                    )
                     total_chunks += inserted
                     current_batch = []
+                    current_records = []
                     print(f"Indexed {total_chunks} chunks...")
 
-        if current_batch:
-            inserted = loader.insert_batch(current_batch)
+        if current_records:
+            inserted = loader.insert_batch(
+                current_batch, replace_record_ids=current_records
+            )
             total_chunks += inserted
 
-        index_ready = loader.ensure_vector_index()
-        print(
-            f"Vector loading complete: total_chunks={total_chunks}, "
-            f"ivfflat_index={'created' if index_ready else 'deferred (table below min_rows; exact scan in use)'}"
-        )
+        print(f"Vector loading complete: total_chunks={total_chunks}, search=exact")
     finally:
         loader.close()
 

@@ -88,7 +88,6 @@ def extract_company_identifier(filename: str) -> str:
     return clean_id
 
 
-# Backward-compatible alias (existing tests import the private name).
 _extract_company_identifier = extract_company_identifier
 
 

@@ -16,10 +16,6 @@ from evaluation.evaluator import EvaluationRecord, FinQAEvaluator
 from evaluation.metrics import compute_ir_metrics_content, evidence_hit
 from ingestion.entity_extractor import _extract_company_identifier
 
-# =====================================================================
-# A1: Graph loader <-> retrieval tool ID contract
-# =====================================================================
-
 
 def test_graph_tool_slugify_matches_loader_convention() -> None:
     """metric/company IDs built at query time must be byte-identical to the
@@ -52,12 +48,7 @@ def test_single_letter_company_codes_are_preserved() -> None:
     assert _extract_company_identifier("C/2017/page_328.pdf") == "C"
     assert _extract_company_identifier("AMZN/2019/page_33.pdf") == "AMZN"
     assert _extract_company_identifier("") == ""
-    assert _extract_company_identifier("PAGE/2001/x.pdf") == ""  # blacklisted
-
-
-# =====================================================================
-# A2: Content-based IR metrics over real FinQA gold_inds format
-# =====================================================================
+    assert _extract_company_identifier("PAGE/2001/x.pdf") == ""
 
 
 GOLD_TABLE_EVIDENCE = (
@@ -68,7 +59,7 @@ GOLD_TEXT_EVIDENCE = "oil gas ngls total ( mmbbls ) ( bcf ) ( mmbbls ) ( mmboe )
 
 
 def test_evidence_hit_via_number_and_label() -> None:
-    retrieved_row = "payments volume 637.0 637000000000.0 2017"
+    retrieved_row = "company American Express payments volume billions 637.0 total volume billions 647.0"
     assert evidence_hit(GOLD_TABLE_EVIDENCE, retrieved_row)
 
 
@@ -77,24 +68,24 @@ def test_evidence_miss_without_shared_number() -> None:
 
 
 def test_evidence_hit_pure_narrative_gold() -> None:
-    chunk = "Production volumes: oil, gas, NGLs and totalboe for the fiscal year."
+    chunk = (
+        "Production volumes: oil (mmbbls), gas (bcf), NGLs (mmbbls) and total (mmboe)."
+    )
     assert evidence_hit(GOLD_TEXT_EVIDENCE, chunk)
     assert not evidence_hit(GOLD_TEXT_EVIDENCE, "Interest expense declined in 2019.")
 
 
 def test_content_ir_metrics_recall_precision_ranking() -> None:
     retrieved = [
-        "payments volume 637.0 637000000000.0",  # covers gold item 1
-        "unrelated risk factor text about foreign exchange",  # irrelevant
-        "total volume 647.0 647000000000.0",  # covers gold item 2
+        "payments volume 637.0 637000000000.0",
+        "unrelated risk factor text about foreign exchange",
+        "company American Express payments volume billions 637.0 total volume billions 647.0",
     ]
     scores = compute_ir_metrics_content(retrieved, [GOLD_TABLE_EVIDENCE], k=5)
     assert scores["recall_at_k"] == 1.0
-    assert scores["precision_at_k"] == pytest.approx(2 / 3, abs=1e-3)
-    assert scores["mrr"] == 1.0
-
-    # Rank-based: relevant at position 1 -> MRR 1.0; all-relevant NDCG = 1.0
-    assert scores["ndcg_at_k"] == 1.0
+    assert scores["precision_at_k"] == pytest.approx(1 / 3, abs=1e-3)
+    assert scores["mrr"] == pytest.approx(1 / 3, abs=1e-3)
+    assert scores["ndcg_at_k"] == 0.5
 
 
 def test_content_ir_metrics_zero_when_nothing_matches() -> None:
@@ -116,10 +107,7 @@ def test_content_ir_metrics_empty_gold_is_neutral() -> None:
     }
 
 
-def test_evaluator_uses_content_ir() -> None:
-    """End-to-end through the evaluator: simulated state with a retrieved row
-    covering the gold evidence must score recall 1.0 (the old ID-space metric
-    could never score above 0 on real data)."""
+def test_evaluator_rejects_partial_evidence() -> None:
     record = EvaluationRecord(
         record_id="rec_test_1",
         question="What were payments volume figures?",
@@ -137,7 +125,7 @@ def test_evaluator_uses_content_ir() -> None:
                     "records": [
                         {
                             "company": "American Express",
-                            "report_id": "report::x",
+                            "report_id": "rec_test_1",
                             "row_label": "payments volume",
                             "category": "other",
                             "year": 2017,
@@ -155,13 +143,8 @@ def test_evaluator_uses_content_ir() -> None:
         "trace_id": "trace_test",
     }
     result = FinQAEvaluator().evaluate_instance(record, simulated_state=simulated_state)
-    assert result.ir_metrics["recall_at_k"] == 1.0
-    assert result.ir_metrics["mrr"] == 1.0
-
-
-# =====================================================================
-# C1/C2: LLM planner parsing, validation, and offline fallback
-# =====================================================================
+    assert result.ir_metrics["recall_at_k"] == 0.0
+    assert result.ir_metrics["mrr"] == 0.0
 
 
 def test_extract_json_plain_and_fenced() -> None:
@@ -186,7 +169,7 @@ def test_validate_llm_plan_accepts_valid_plan() -> None:
             {
                 "task_id": "task_2",
                 "target_tool": "safe_math",
-                "query_payload": {"expression": "task_1.amount * 2"},
+                "query_payload": {"expression": "task_1.amount"},
                 "dependencies": ["task_1"],
             },
         ],
@@ -319,11 +302,6 @@ def test_plan_node_rejects_invalid_llm_plan(monkeypatch) -> None:
     assert "rules]" in outcome["scratchpad"][0]
 
 
-# =====================================================================
-# C3: Synthesizer grounding gate
-# =====================================================================
-
-
 def test_extract_numerals_strips_commas() -> None:
     assert extract_numerals("Revenue rose 1,200 to 3,456.78 (-45)") == {
         "1200",
@@ -332,18 +310,10 @@ def test_extract_numerals_strips_commas() -> None:
     }
 
 
-def test_grounding_check_accepts_cited_figures() -> None:
-    corpus = [
-        "What was AMZN revenue growth?",
-        "AMZN 2019 Operating revenue 286449 286449000000.0",
-        "AMZN 2020 Operating revenue 386064 386064000000.0",
-        "divide(subtract(task_2.amount, task_1.amount), task_1.amount) = 0.3760",
-    ]
-    answer = (
-        "• Operating revenue grew from 286449 to 386064 (AMZN FY2020).\n"
-        "• Growth rate: 0.3760."
-    )
-    assert _is_grounded(answer, corpus)
+def test_grounding_check_accepts_verbatim_claim() -> None:
+    corpus = ["AMZN reported operating revenue of 386064 in 2020."]
+    assert _is_grounded(corpus[0], corpus)
+    assert not _is_grounded("AMZN reported operating losses of 386064 in 2020.", corpus)
 
 
 def test_grounding_check_rejects_fabricated_figures() -> None:
@@ -352,22 +322,16 @@ def test_grounding_check_rejects_fabricated_figures() -> None:
     assert not _is_grounded(answer, corpus)
 
 
-def test_grounding_check_ignores_list_ordinals() -> None:
+def test_grounding_check_rejects_unsupported_extra_claim() -> None:
     corpus = ["AMZN 2020 revenue 386064"]
     answer = "1. Revenue was 386064.\n2. Verified against the filing."
-    assert _is_grounded(answer, corpus)
-
-
-# =====================================================================
-# A3: regression runner contract
-# =====================================================================
+    assert not _is_grounded(answer, corpus)
 
 
 def test_run_regression_fails_loudly_without_states(
     tmp_path, monkeypatch, capsys
 ) -> None:
-    """No recorded fixtures and no --live flag -> exit code 1 with a message
-    that tells the operator how to generate fixtures (never a silent live run)."""
+    """Explicit scorer replay fails when its fixture directory is missing."""
     from evaluation import run_regression
 
     data_file = tmp_path / "records.jsonl"
@@ -380,12 +344,14 @@ def test_run_regression_fails_loudly_without_states(
     }
     data_file.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
-    states_dir = tmp_path / "states"  # does not exist
+    states_dir = tmp_path / "states"
 
     monkeypatch.setattr(
         "sys.argv",
         [
             "run_regression.py",
+            "--mode",
+            "score-replay",
             "--data-file",
             str(data_file),
             "--states-dir",
@@ -394,9 +360,7 @@ def test_run_regression_fails_loudly_without_states(
     )
     exit_code = run_regression.main()
     assert exit_code == 1
-    out = capsys.readouterr().out
-    assert "no recorded states directory" in out
-    assert "runner.py" in out
+    assert "Saved states directory is missing" in capsys.readouterr().err
 
 
 def _minimal_state(question: str):

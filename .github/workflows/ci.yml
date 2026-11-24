@@ -5,59 +5,69 @@ on:
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  test:
+  quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v10.4.0
         with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
           python-version: "3.11"
-          cache: pip
 
-      - name: Install project + dev dependencies
-        run: pip install -e ".[dev]"
+      - name: Install locked project and development dependencies
+        run: uv sync --locked --extra dev
 
-      - name: Lint (ruff)
-        run: ruff check .
+      - name: Lint
+        run: uv run ruff check agent api ingestion knowledge evaluation observability ui infra tests
 
-      - name: Format check (black)
-        run: black --check .
+      - name: Check formatting
+        run: uv run black --check --target-version py311 --line-length 88 agent api ingestion knowledge evaluation observability ui infra tests
 
-      - name: Type-check (mypy)
-        run: mypy agent api ingestion knowledge evaluation observability ui
+      - name: Type check
+        run: uv run mypy agent api ingestion knowledge evaluation observability ui
 
-      - name: Unit + integration tests (offline-safe)
-        run: pytest tests/ -v
+      - name: Run offline tests
+        env:
+          FINAGENT_INTEGRATION_TESTS: "0"
+          FINAGENT_TESTS_LLM: "0"
+        run: uv run pytest -q
 
-      - name: Dependency vulnerability scan (pip-audit)
-        # Advisory data can flag transitive deps between releases; keep the
-        # signal visible without blocking the pipeline on background noise.
-        continue-on-error: true
-        run: pip-audit
+      - name: Run candidate-runtime regression gate
+        env:
+          FINAGENT_INTEGRATION_TESTS: "0"
+          FINAGENT_TESTS_LLM: "0"
+        run: uv run python -m evaluation.run_regression
 
-      - name: Regression gate (fixture replay)
-        # Replays per-record agent states recorded by evaluation/runner.py
-        # (eval_results/states/). Without fixtures the gate reports and
-        # skips — it must never fall back to a live run inside CI, since
-        # no databases are reachable here.
-        run: |
-          if [ -d eval_results/states ] && [ -n "$(ls -A eval_results/states 2>/dev/null)" ]; then
-            python evaluation/run_regression.py --min-accuracy 0.70
-          else
-            echo "::notice::No recorded states in eval_results/states — skipping regression gate."
-            echo "::notice::Generate fixtures locally with: python evaluation/runner.py --limit 25"
-          fi
+      - name: Audit dependencies
+        run: uv run pip-audit
 
-  build:
-    needs: test
+      - name: Verify the supported infrastructure target
+        run: uv run python infra/validate_target.py
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Verify packaged runtime assets
+        run: uv run python -c "from pathlib import Path; import zipfile; wheel = next(Path('dist').glob('*.whl')); archive = zipfile.ZipFile(wheel); required = {'agent/prompts/planner_v1.txt', 'agent/tools/schemas/safe_math_schema.json', 'ui/styles.css'}; missing = required - set(archive.namelist()); assert not missing, f'Missing wheel assets: {sorted(missing)}'"
+
+  container:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build API image (dry-run, no push)
-        run: docker build -f docker/Dockerfile.api -t financial-agent-api:ci .
+      - uses: astral-sh/setup-uv@v10.4.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          python-version: "3.11"
 
-      - name: Build UI image (dry-run, no push)
-        run: docker build -f docker/Dockerfile.ui -t financial-agent-ui:ci .
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build application image
+        run: docker build -f docker/Dockerfile.api -t financial-agent:ci .

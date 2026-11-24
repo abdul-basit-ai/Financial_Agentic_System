@@ -14,17 +14,18 @@ entrypoints rather than clearing these caches.
 
 from __future__ import annotations
 
+import atexit
 from functools import lru_cache
 from typing import Any
 
-from agent.tools.vector_tool import EMBEDDING_MODEL_NAME
+from knowledge.vector_store.search import embedding_model_name
 
 
 @lru_cache(maxsize=1)
-def get_sentence_encoder(model_name: str = EMBEDDING_MODEL_NAME) -> Any:
+def get_sentence_encoder(model_name: str | None = None) -> Any:
     from sentence_transformers import SentenceTransformer
 
-    return SentenceTransformer(model_name)
+    return SentenceTransformer(embedding_model_name(model_name))
 
 
 @lru_cache(maxsize=1)
@@ -32,6 +33,22 @@ def get_vector_tool_client() -> Any:
     from agent.tools.vector_tool import VectorRetrievalTool
 
     return VectorRetrievalTool()
+
+
+@lru_cache(maxsize=1)
+def get_graph_tool_client() -> Any:
+    from agent.tools.graph_tool import GraphRetrievalTool
+
+    client = GraphRetrievalTool()
+    atexit.register(client.close)
+    return client
+
+
+@lru_cache(maxsize=1)
+def get_table_tool_client() -> Any:
+    from agent.tools.table_tool import TableExtractionTool
+
+    return TableExtractionTool(graph_client=get_graph_tool_client())
 
 
 @lru_cache(maxsize=1)
@@ -52,8 +69,6 @@ def get_procedural_bank() -> Any:
 def get_memory_tool_client() -> Any:
     from agent.tools.memory_tool import MemoryRetrievalTool
 
-    # Share the cached episodic/procedural instances so the whole memory
-    # tier loads the encoder exactly once.
     return MemoryRetrievalTool(
         episodic_store=get_episodic_store(),
         procedural_bank=get_procedural_bank(),

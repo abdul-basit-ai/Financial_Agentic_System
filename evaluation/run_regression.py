@@ -1,145 +1,147 @@
-"""CI regression runner — evaluates the agent on a fixed FinQA sample and
-fails if execution accuracy drops below the configured threshold.
-
-Phase 11 contract (project_goals.md): callable from CI (Phase 15) that fails
-below an accuracy threshold. Default mode REPLAYS recorded per-record agent
-states (eval_results/states/, written by evaluation/runner.py --save-states)
-through the evaluator, so CI needs no live Neo4j/pgvector. The live agent runs
-ONLY when --live is passed explicitly — never as a silent fallback, because a
-live run inside CI without databases would hang, and an empty fixture set must
-be a loud failure, not a zero-division.
-
-Usage:
-    python evaluation/run_regression.py --min-accuracy 0.70
-    python evaluation/run_regression.py --live --limit 25
-"""
+"""Run an offline candidate regression or explicitly rescore archived states."""
 
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
 
-def build_live_agent():
-    from agent.graph import create_financial_agent
+def _candidate_runtime() -> int:
+    root = Path(__file__).resolve().parent.parent
+    regression_tests = root / "tests" / "test_evaluation_regressions.py"
+    if not regression_tests.is_file():
+        raise ValueError(
+            f"Offline candidate fixture suite is missing: {regression_tests}"
+        )
+    environment = {
+        **os.environ,
+        "FINAGENT_INTEGRATION_TESTS": "0",
+        "FINAGENT_TESTS_LLM": "0",
+        "OPENAI_API_KEY": "",
+        "OPENROUTER_API_KEY": "",
+    }
+    print(
+        "Executing candidate graph with deterministic providers and fixture evidence",
+        flush=True,
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            str(regression_tests),
+            "-k",
+            "candidate_runtime",
+        ],
+        cwd=root,
+        env=environment,
+        check=False,
+    )
+    return completed.returncode
 
-    return create_financial_agent()
+
+def _score_replay(
+    data_file: Path, states_dir: Path, limit: int | None, min_accuracy: float
+) -> int:
+    from evaluation.evaluator import FinQAEvaluator
+    from evaluation.runner import (
+        legacy_record_filename,
+        load_finqa_records,
+        safe_record_filename,
+    )
+
+    if not states_dir.is_dir():
+        raise ValueError(f"Saved states directory is missing: {states_dir}")
+    records = load_finqa_records(str(data_file), limit=limit)
+    legacy_names = Counter(
+        legacy_record_filename(record.record_id) for record in records
+    )
+    evaluator = FinQAEvaluator()
+    correct = 0
+    for record in records:
+        path = states_dir / f"{safe_record_filename(record.record_id)}.json"
+        if path.is_file():
+            wrapped = json.loads(path.read_text(encoding="utf-8"))
+            if wrapped.get("record_id") != record.record_id or not isinstance(
+                wrapped.get("state"), dict
+            ):
+                raise ValueError(
+                    f"Invalid saved state envelope for record {record.record_id}"
+                )
+            state = wrapped["state"]
+        else:
+            name = legacy_record_filename(record.record_id)
+            legacy = states_dir / f"{name}.json"
+            if legacy_names[name] != 1 or not legacy.is_file():
+                raise ValueError(
+                    f"No unambiguous saved state for record {record.record_id}"
+                )
+            state = json.loads(legacy.read_text(encoding="utf-8"))
+            if state.get("record_id") != record.record_id:
+                raise ValueError(
+                    f"Legacy fixture ID does not match record {record.record_id}"
+                )
+        if state.get("input") != record.question or "final_answer" not in state:
+            raise ValueError(
+                f"Saved state does not match the full case for {record.record_id}"
+            )
+        correct += evaluator.evaluate_instance(
+            record, simulated_state=state
+        ).execution_correct
+
+    accuracy = correct / len(records)
+    print(
+        f"Scorer replay only: {accuracy:.2%} displayed execution accuracy over {len(records)} archived states"
+    )
+    return int(accuracy < min_accuracy)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="CI regression gate over the FinQA evaluation harness"
-    )
-    parser.add_argument("--min-accuracy", type=float, default=0.70)
+    parser = argparse.ArgumentParser(description="Fail-closed FinQA regression checks")
     parser.add_argument(
-        "--data-file",
-        default="data/processed/normalized/finqa_dev_normalized.jsonl",
+        "--mode", default="candidate", choices=("candidate", "score-replay")
     )
-    parser.add_argument("--limit", type=int, default=25)
-    parser.add_argument(
-        "--states-dir",
-        default="eval_results/states",
-        help="Directory of recorded per-record states written by runner.py",
-    )
-    parser.add_argument(
-        "--live",
-        action="store_true",
-        help="Run the live LangGraph agent instead of replaying recorded states "
-        "(requires reachable Neo4j/pgvector).",
-    )
+    parser.add_argument("--min-accuracy", type=float)
+    parser.add_argument("--data-file", type=Path)
+    parser.add_argument("--states-dir", type=Path)
+    parser.add_argument("--limit", type=int)
     args = parser.parse_args()
 
-    from evaluation.evaluator import FinQAEvaluator
-    from evaluation.runner import load_finqa_records
+    try:
+        if args.mode == "candidate":
+            if any(
+                value is not None
+                for value in (
+                    args.min_accuracy,
+                    args.data_file,
+                    args.states_dir,
+                    args.limit,
+                )
+            ):
+                parser.error(
+                    "Case selection and accuracy threshold options require --mode score-replay"
+                )
+            return _candidate_runtime()
 
-    data_path = Path(args.data_file)
-    if not data_path.exists():
-        # data/processed is DVC-managed and not committed; a CI checkout has
-        # recorded states but no raw records. The gate must never run live in
-        # CI, so a missing corpus is a loud SKIP, not a crash.
-        print(
-            f"::notice::Normalized records file not found: {args.data_file} "
-            f"(data/processed is DVC-managed, absent in CI checkouts) — "
-            f"skipping regression gate."
+        min_accuracy = args.min_accuracy if args.min_accuracy is not None else 0.70
+        if not 0 <= min_accuracy <= 1:
+            parser.error("min-accuracy must be between 0 and 1")
+        return _score_replay(
+            args.data_file
+            or Path("data/processed/normalized/finqa_dev_normalized.jsonl"),
+            args.states_dir or Path("eval_results/states"),
+            args.limit,
+            min_accuracy,
         )
-        print(
-            "::notice::Generate locally with: python ingestion/normalizer.py, "
-            "then python evaluation/runner.py --limit 25"
-        )
-        return 0
-
-    records = load_finqa_records(args.data_file, limit=args.limit)
-    if not records:
-        print(f"FAIL: no evaluation records loaded from {args.data_file}")
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
         return 1
-
-    correct = 0
-    evaluated = 0
-
-    if args.live:
-        evaluator = FinQAEvaluator(agent_runner=build_live_agent())
-        for rec in records:
-            result = evaluator.evaluate_instance(rec)
-            evaluated += 1
-            correct += int(result.execution_correct)
-    else:
-        # Replay mode: recorded baseline trajectories from the last full run.
-        state_dir = Path(args.states_dir)
-        if not state_dir.exists():
-            print(
-                f"FAIL: no recorded states directory at {state_dir}. "
-                f"Run `python evaluation/runner.py --limit {args.limit}` first "
-                f"to generate fixtures, or pass --live."
-            )
-            return 1
-
-        evaluator = FinQAEvaluator(agent_runner=None)
-        import json
-
-        from evaluation.runner import safe_record_filename
-
-        missing: list[str] = []
-        for rec in records:
-            state_file = state_dir / f"{safe_record_filename(rec.record_id)}.json"
-            if not state_file.exists():
-                missing.append(rec.record_id)
-                continue
-            with open(state_file, encoding="utf-8") as f:
-                state = json.load(f)
-            result = evaluator.evaluate_instance(rec, simulated_state=state)
-            evaluated += 1
-            correct += int(result.execution_correct)
-
-        if evaluated == 0:
-            print(
-                f"FAIL: zero recorded states matched the {len(records)} selected "
-                f"records in {state_dir}. Regenerate fixtures with "
-                f"`python evaluation/runner.py --limit {args.limit}`, or pass --live."
-            )
-            return 1
-        if missing:
-            print(
-                f"WARNING: {len(missing)}/{len(records)} records had no recorded "
-                f"state and were skipped (e.g. {missing[:3]})."
-            )
-
-    if evaluated == 0:
-        print("FAIL: zero records evaluated (empty fixture set?)")
-        return 1
-
-    accuracy = correct / evaluated
-    print(
-        f"Execution accuracy: {accuracy:.2%} over {evaluated} records "
-        f"(threshold: {args.min_accuracy:.2%})"
-    )
-
-    if accuracy < args.min_accuracy:
-        print(f"FAIL: accuracy {accuracy:.2%} below threshold {args.min_accuracy:.2%}")
-        return 1
-
-    print("PASS")
-    return 0
 
 
 if __name__ == "__main__":

@@ -56,23 +56,21 @@ def compare_record(
 
     qa = raw.get("qa", {}) if isinstance(raw.get("qa"), dict) else {}
 
-    # Core field equality checks.
     if str(parsed.get("filename", "")) != str(raw.get("filename", "")):
         anomalies.append("filename_mismatch")
     if str(parsed.get("question", "")) != str(qa.get("question", "")):
         anomalies.append("question_mismatch")
     raw_answer = str(qa.get("answer", ""))
     parsed_answer = str(parsed.get("answer", ""))
-    # private_test is unlabeled in FinQA by design; avoid treating missing answers as anomalies.
+
     if split != "private_test" and parsed_answer != raw_answer:
         anomalies.append("answer_mismatch")
     raw_program = str(qa.get("program", ""))
     parsed_program = str(parsed.get("program", ""))
-    # private_test is unlabeled in FinQA by design; avoid treating missing programs as anomalies.
+
     if split != "private_test" and parsed_program != raw_program:
         anomalies.append("program_mismatch")
 
-    # Shape and count checks.
     raw_table = raw.get("table", []) if isinstance(raw.get("table"), list) else []
     parsed_table = (
         parsed.get("table", []) if isinstance(parsed.get("table"), list) else []
@@ -89,7 +87,6 @@ def compare_record(
     ):
         anomalies.append("post_text_count_mismatch")
 
-    # Missing/null analysis.
     if not str(qa.get("program", "")).strip():
         missing["missing_program"] += 1
     if not str(qa.get("answer", "")).strip():
@@ -127,7 +124,6 @@ def compare_record(
         ),
     }
 
-    # Edge tags consistency checks.
     edge_tags = set(parsed.get("edge_case_tags", []))
     if missing["missing_program"] > 0 and "missing_program" not in edge_tags:
         anomalies.append("edge_tag_missing_program_not_set")
@@ -184,7 +180,6 @@ def validate_split(dataset_dir: str, parsed_dir: str, split: str) -> dict[str, A
         k: round(mean(vals), 4) if vals else 0.0 for k, vals in missing_pcts.items()
     }
 
-    # Global missing percentages over records.
     record_count = max(1, len(raw_records))
     missing_pct = {
         f"{k}_pct": round(v / record_count * 100.0, 4) for k, v in missing.items()

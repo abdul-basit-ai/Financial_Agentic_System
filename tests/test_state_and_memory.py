@@ -19,10 +19,6 @@ from agent.state.schema import (
 )
 from agent.tools.memory_tool import MemoryQueryInput
 
-# =====================================================================
-# State Schema & Reducer Tests
-# =====================================================================
-
 
 def test_agent_state_v1_validation() -> None:
     state = AgentStateV1(
@@ -32,56 +28,40 @@ def test_agent_state_v1_validation() -> None:
     assert state.iteration_count == 0
     assert state.hitl_status == "NONE"
 
-    # Invariant: Invalid UUIDv4 must fail validation
     with pytest.raises(ValueError):
         AgentStateV1(input="Invalid trace", trace_id="invalid-uuid")
 
 
 def test_langgraph_reducers() -> None:
-    # 1. Scratchpad Reducer
+
     s1 = ["Thought 1"]
     s2 = append_scratchpad(s1, "Thought 2")
     assert s2 == ["Thought 1", "Thought 2"]
 
-    # 2. Tool Results Reducer
     r1 = [{"tool": "math", "result": 100}]
     r2 = append_tool_results(r1, {"tool": "graph", "result": 200})
     assert len(r2) == 2
 
-    # 3. Parallel Branch Fan-In Merge Reducer (Phase 7 Monotonicity)
     branch_a = {"task_1": 1050.0}
     branch_b = {"task_2": 950.0}
     merged = merge_sub_task_results(branch_a, branch_b)
     assert merged == {"task_1": 1050.0, "task_2": 950.0}
 
 
-# =====================================================================
-# Episodic Decay Mathematics Tests
-# =====================================================================
-
-
 def test_exponential_recency_decay() -> None:
     now = datetime.now(UTC)
     half_life = 30.0
 
-    # Event occurring now: Score = 2^0 = 1.0
     score_now = compute_recency_score(now, half_life_days=half_life)
     assert score_now == pytest.approx(1.0, rel=1e-3)
 
-    # Event occurring exactly 30 days ago: Score = 2^(-1) = 0.5
     past_30d = now - timedelta(days=30)
     score_30d = compute_recency_score(past_30d, half_life_days=half_life)
     assert score_30d == pytest.approx(0.5, rel=1e-3)
 
-    # Event occurring 60 days ago: Score = 2^(-2) = 0.25
     past_60d = now - timedelta(days=60)
     score_60d = compute_recency_score(past_60d, half_life_days=half_life)
     assert score_60d == pytest.approx(0.25, rel=1e-3)
-
-
-# =====================================================================
-# Procedural Memory Archetype Matching Tests
-# =====================================================================
 
 
 def test_procedural_archetype_matching() -> None:
@@ -90,7 +70,6 @@ def test_procedural_archetype_matching() -> None:
 
     bank = ProceduralMemoryBank()
 
-    # Query matching YoY comparison archetype
     arch, score = bank.match_archetype(
         "What was the percentage change in Microsoft revenue from 2020 to 2021?"
     )
@@ -98,11 +77,6 @@ def test_procedural_archetype_matching() -> None:
     assert arch.archetype_id == "yoy_delta_comparison"
     assert score > 0.55
     assert len(arch.planned_steps) == 3
-
-
-# =====================================================================
-# Memory Promotion & Importance Tests
-# =====================================================================
 
 
 def test_calculate_episode_importance() -> None:
@@ -114,7 +88,7 @@ def test_calculate_episode_importance() -> None:
     )
     importance = calculate_episode_importance(state)
     assert 0.0 <= importance <= 1.0
-    assert importance > 0.7  # High complexity + HITL approval yields high importance
+    assert importance > 0.7
 
 
 def test_memory_promotion_skips_incomplete_sessions() -> None:
@@ -124,12 +98,9 @@ def test_memory_promotion_skips_incomplete_sessions() -> None:
     assert promoted_id is None
 
 
-# =====================================================================
-# LangGraph Checkpointer Tests (Phase 8 HITL readiness)
-# =====================================================================
-
-
-def test_checkpointer_prefers_redis_and_persists_state() -> None:
+def test_sqlite_checkpointer_persists_state_across_instances(
+    tmp_path, monkeypatch
+) -> None:
     from langgraph.graph import END, START, StateGraph
     from typing_extensions import TypedDict
 
@@ -139,6 +110,8 @@ def test_checkpointer_prefers_redis_and_persists_state() -> None:
     def node_a(state: S) -> dict:
         return {"value": "from_a"}
 
+    monkeypatch.setenv("FINAGENT_CHECKPOINT_BACKEND", "sqlite")
+    monkeypatch.setenv("FINAGENT_CHECKPOINT_PATH", str(tmp_path / "checkpoint.sqlite3"))
     cp = get_checkpointer()
     builder = StateGraph(S)
     builder.add_node("a", node_a)
@@ -148,26 +121,26 @@ def test_checkpointer_prefers_redis_and_persists_state() -> None:
 
     cfg = {"configurable": {"thread_id": "test-thread-1"}}
     graph.invoke({"value": "init"}, cfg)
-    snap = graph.get_state(cfg)
+    from langgraph.checkpoint.sqlite import SqliteSaver
+
+    with SqliteSaver.from_conn_string(str(tmp_path / "checkpoint.sqlite3")) as reopened:
+        snap = builder.compile(checkpointer=reopened).get_state(cfg)
     assert snap.values["value"] == "from_a"
+    assert isinstance(cp, SqliteSaver)
+    cp.conn.close()
 
 
-def test_checkpointer_falls_back_when_redis_unreachable() -> None:
+def test_explicit_redis_backend_fails_closed_without_a_connection(monkeypatch) -> None:
+    import redis
 
-    from langgraph.checkpoint.memory import MemorySaver
+    monkeypatch.setenv("FINAGENT_CHECKPOINT_BACKEND", "redis")
 
-    os.environ["REDIS_URL"] = "redis://localhost:9999/0"
-    try:
-        cp = get_checkpointer()
-        # Fallback is acceptable but must be the in-memory saver and announced
-        assert isinstance(cp, MemorySaver)
-    finally:
-        del os.environ["REDIS_URL"]
+    def unavailable(_client):
+        raise redis.ConnectionError("Redis unavailable")
 
-
-# =====================================================================
-# JSON Schema Export Test (Phase 10 MCP Readiness)
-# =====================================================================
+    monkeypatch.setattr(redis.Redis, "ping", unavailable)
+    with pytest.raises(redis.ConnectionError):
+        get_checkpointer(redis_url="redis://localhost:9999/0")
 
 
 def test_memory_tool_schema_export() -> None:

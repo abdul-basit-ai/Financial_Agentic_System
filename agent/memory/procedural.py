@@ -95,7 +95,7 @@ class ProceduralMemoryBank:
     """Matches incoming queries against verified procedural execution archetypes."""
 
     def __init__(self, model_name: str = EMBEDDING_MODEL_NAME) -> None:
-        # Imported here so importing this module does not pull torch
+
         from sentence_transformers import SentenceTransformer
 
         self.model = SentenceTransformer(model_name)

@@ -28,8 +28,8 @@ h1, h2, h3, h4 { color: var(--text); letter-spacing: -.035em; }
 .stTextArea textarea, .stTextInput input { background: #fafbf8; color: var(--text); font-size: .9rem; line-height: 1.65; }
 .stTextArea textarea:focus, .stTextInput input:focus { outline-color: var(--teal); }
 .stButton button, .stFormSubmitButton button { border-radius: 7px; font-size: .85rem; border: 1px solid var(--line); box-shadow: none; transition: background .15s; }
-.stButton button[kind="primary"], .stFormSubmitButton button[kind="primary"] { background: #285d43; border-color: #285d43; color: white; min-height: 2.8rem; }
-.stButton button[kind="primary"]:hover, .stFormSubmitButton button[kind="primary"]:hover { background: #1b4932; border-color: #1b4932; color: white; }
+button[data-testid="stBaseButton-primary"], button[data-testid="stBaseButton-primaryFormSubmit"] { background: #285d43; border-color: #285d43; color: white; min-height: 2.8rem; }
+button[data-testid="stBaseButton-primary"]:hover, button[data-testid="stBaseButton-primaryFormSubmit"]:hover { background: #1b4932; border-color: #1b4932; color: white; }
 button:focus-visible, a:focus-visible { outline: 2px solid #377c57; outline-offset: 3px; }
 .empty-state { text-align: center; padding: 3rem 1.5rem; margin-top: 1rem; border: 1px dashed #d6dfd2; border-radius: 12px; }
 .empty-mark { width: 42px; height: 42px; display: grid; place-items: center; margin: 0 auto 1rem; border-radius: 50%; background: #e7eee3; color: #50714f; font-size: 1.4rem; }
@@ -58,4 +58,17 @@ button:focus-visible, a:focus-visible { outline: 2px solid #377c57; outline-offs
   [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
   [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { width: 100% !important; flex: 1 1 100% !important; min-width: 0 !important; }
   .topbar { flex-wrap: wrap; }
+}
+.stApp { background: #f5f7f3; }
+.block-container { max-width: 1540px; }
+[data-testid="stVerticalBlockBorderWrapper"] { border-color: #dbe3da; box-shadow: 0 5px 22px #25392d08; }
+[data-testid="stFileUploader"] section { border: 1px dashed #aab9aa; background: #fbfcfa; }
+[data-testid="stMultiSelect"] [data-baseweb="tag"] { background: #e0ebdf; color: #214a36; }
+[data-testid="stRadio"] label { font-size: .86rem; }
+[data-testid="stDownloadButton"] button { border-radius: 7px; }
+.session-meta { padding: .55rem .75rem; border-left: 2px solid #9a7b3e; background: #f0f2ec; }
+.empty-state { background: #fbfcfa; }
+.kpi { border-bottom: 1px solid var(--line); }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }

@@ -2,17 +2,18 @@
 
 from __future__ import annotations
 
+import json
 import math
+import os
 
 from pydantic import BaseModel, Field
 
-# Pricing per 1,000 tokens (USD)
 MODEL_PRICING_TABLE: dict[str, dict[str, float]] = {
     "gpt-4o": {"input": 0.005, "output": 0.015},
     "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
     "claude-3-5-sonnet": {"input": 0.003, "output": 0.015},
     "claude-3-haiku": {"input": 0.00025, "output": 0.00125},
-    "all-minilm-l6-v2": {"input": 0.0, "output": 0.0},  # Local embeddings
+    "all-minilm-l6-v2": {"input": 0.0, "output": 0.0},
     "default": {"input": 0.002, "output": 0.008},
 }
 
@@ -21,7 +22,7 @@ class TokenUsage(BaseModel):
     prompt_tokens: int = Field(default=0, ge=0)
     completion_tokens: int = Field(default=0, ge=0)
     total_tokens: int = Field(default=0, ge=0)
-    estimated_cost_usd: float = Field(default=0.0, ge=0.0)
+    estimated_cost_usd: float | None = Field(default=None, ge=0.0)
 
 
 class LatencyPercentiles(BaseModel):
@@ -41,7 +42,14 @@ def calculate_cost(
 ) -> TokenUsage:
     """Calculates dollar expenditure for an LLM invocation."""
     key = model_name.lower().strip()
-    pricing = MODEL_PRICING_TABLE.get(key, MODEL_PRICING_TABLE["default"])
+    configured = json.loads(os.getenv("MODEL_PRICING_JSON") or "{}")
+    pricing = configured.get(key) or MODEL_PRICING_TABLE.get(key)
+    if pricing is None or key == "default":
+        return TokenUsage(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        )
 
     input_cost = (prompt_tokens / 1000.0) * pricing["input"]
     output_cost = (completion_tokens / 1000.0) * pricing["output"]

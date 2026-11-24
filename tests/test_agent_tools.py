@@ -19,10 +19,6 @@ from agent.tools.safe_math import (
 )
 from agent.tools.vector_tool import VectorChunkRecord, VectorSearchInput
 
-# =====================================================================
-# Safe Math Tool Tests
-# =====================================================================
-
 
 def test_safe_math_standard_arithmetic() -> None:
     evaluator = SafeMathEvaluator()
@@ -34,10 +30,10 @@ def test_safe_math_standard_arithmetic() -> None:
 
 def test_safe_math_financial_symbols_and_percentages() -> None:
     evaluator = SafeMathEvaluator()
-    # Currency symbols stripped
+
     assert evaluator.evaluate("$150.50 + $49.50") == 200.0
     assert evaluator.evaluate("€1,200 - €200") == 1000.0
-    # Percentage notation conversion
+
     assert evaluator.evaluate("15% * 200") == 30.0
     assert evaluator.evaluate("100 + 10%") == 100.1
 
@@ -52,7 +48,6 @@ def test_safe_math_finqa_dsl_functions() -> None:
     assert evaluator.evaluate("greater(10, 5)") == 1.0
     assert evaluator.evaluate("greater(2, 5)") == 0.0
 
-    # FinQA table aggregations
     assert evaluator.evaluate("table_sum(10, 20, 30)") == 60.0
     assert evaluator.evaluate("table_max(5, 25, 12)") == 25.0
     assert evaluator.evaluate("table_min(5, 25, 12)") == 5.0
@@ -85,11 +80,6 @@ def test_safe_math_instrumented_envelope() -> None:
     assert result.metrics.latency_ms >= 0.0
 
 
-# =====================================================================
-# Context Fusion Tool Tests (RRF Math & None Guards)
-# =====================================================================
-
-
 def test_reciprocal_rank_fusion_with_none_values() -> None:
     graph_data = [
         GraphMetricRecord(
@@ -99,7 +89,7 @@ def test_reciprocal_rank_fusion_with_none_values() -> None:
             category="revenue",
             year=2020,
             amount=1000.0,
-            normalized_amount=None,  # Tests None guard
+            normalized_amount=None,
         ),
         GraphMetricRecord(
             company="Apple",
@@ -107,7 +97,7 @@ def test_reciprocal_rank_fusion_with_none_values() -> None:
             row_label="Footnote Item",
             category="other",
             year=None,
-            amount=None,  # Tests None guard
+            amount=None,
             normalized_amount=None,
         ),
     ]
@@ -137,40 +127,30 @@ def test_reciprocal_rank_fusion_with_none_values() -> None:
     assert output.fused_items[0].rrf_score == pytest.approx(1.0 / 61.0, rel=1e-3)
 
 
-# =====================================================================
-# Query Decomposition Tool Tests
-# =====================================================================
-
-
 def test_query_decomposer_identifies_yoy_and_metrics() -> None:
     q = "What was the percentage change in Apple's revenue between 2019 and 2020?"
     out = decompose_query(q, company="AAPL")
 
     assert out.is_multi_hop is True
     assert len(out.sub_tasks) == 4
-    # task_1 is the vector anchor scoped to the company's filings
+
     anchor = out.sub_tasks[0]
     assert anchor.target_tool == "vector_retrieval"
     assert anchor.query_payload["company_identifier"] == "AAPL"
     assert anchor.dependencies == []
-    # graph tasks depend on the anchor
+
     g1, g2 = out.sub_tasks[1], out.sub_tasks[2]
     assert g1.query_payload["year"] == 2019
     assert g1.query_payload["metric_name"] == "revenue"
     assert g2.query_payload["year"] == 2020
     assert g1.dependencies == ["task_1"]
     assert g2.dependencies == ["task_1"]
-    # math consumes the graph tasks
+
     math_task = out.sub_tasks[3]
     assert math_task.target_tool == "safe_math"
     assert math_task.dependencies == ["task_2", "task_3"]
     assert "task_3.amount" in math_task.query_payload["expression"]
     assert "task_2.amount" in math_task.query_payload["expression"]
-
-
-# =====================================================================
-# Graph Security & Mutation Guard Tests
-# =====================================================================
 
 
 def test_graph_tool_blocks_cypher_mutations() -> None:
@@ -186,11 +166,6 @@ def test_graph_tool_blocks_cypher_mutations() -> None:
 
     safe_query = "MATCH (c:Company)-[:FILED]->(r:Report) RETURN c.name, r.year"
     assert bool(FORBIDDEN_CYPHER_MUTATIONS.search(safe_query)) is False
-
-
-# =====================================================================
-# JSON Schema Export Tests (MCP Phase 10 Readiness)
-# =====================================================================
 
 
 def test_pydantic_json_schema_exportability() -> None:

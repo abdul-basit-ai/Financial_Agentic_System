@@ -1,6 +1,6 @@
 """Cryptographic Merkle-chain audit ledger.
 
-Provides tamper-evident SHA-256 state tracking for SEC Rule 17a-4 compliance.
+Provides tamper-evident SHA-256 state tracking for application events.
 """
 
 from __future__ import annotations
@@ -47,15 +47,18 @@ class MerkleAuditLedger:
         state_payload: dict[str, Any],
         metadata: dict[str, Any] | None = None,
     ) -> AuditEntry:
-        entry_idx = len(self.entries)
+        event_id = (metadata or {}).get("event_id")
+        if event_id:
+            for previous in self.entries:
+                if previous.metadata.get("event_id") == event_id:
+                    return previous
+        entry_idx = self.entries[-1].entry_index + 1 if self.entries else 0
         prev_hash = self.entries[-1].entry_hash if self.entries else self.GENESIS_HASH
         timestamp = datetime.now(UTC).isoformat()
 
-        # Deterministic state payload hash
         state_hash = self._canonical_hash(state_payload)
 
-        # Compound block hash: H_t = SHA-256(H_{t-1} + trace + node + actor + action + state_hash)
-        compound_raw = f"{prev_hash}:{trace_id}:{node_name}:{actor_id}:{action_type}:{state_hash}:{timestamp}"
+        compound_raw = f"{entry_idx}:{prev_hash}:{trace_id}:{node_name}:{actor_id}:{action_type}:{state_hash}:{timestamp}:{self._canonical_hash(metadata or {})}"
         entry_hash = hashlib.sha256(compound_raw.encode("utf-8")).hexdigest()
 
         entry = AuditEntry(
@@ -76,6 +79,8 @@ class MerkleAuditLedger:
     def verify_integrity(self) -> tuple[bool, str]:
         """Validates that the Merkle hash chain has not been tampered with or altered."""
         for i, entry in enumerate(self.entries):
+            if entry.entry_index != i:
+                return False, f"Broken index sequence at index {i}."
             expected_prev = (
                 self.entries[i - 1].entry_hash if i > 0 else self.GENESIS_HASH
             )
@@ -83,8 +88,8 @@ class MerkleAuditLedger:
                 return False, f"Broken chain link at index {i}: prev_hash mismatch."
 
             compound_raw = (
-                f"{entry.prev_hash}:{entry.trace_id}:{entry.node_name}:{entry.actor_id}:"
-                f"{entry.action_type}:{entry.state_hash}:{entry.timestamp_utc}"
+                f"{entry.entry_index}:{entry.prev_hash}:{entry.trace_id}:{entry.node_name}:{entry.actor_id}:"
+                f"{entry.action_type}:{entry.state_hash}:{entry.timestamp_utc}:{self._canonical_hash(entry.metadata)}"
             )
             recomputed = hashlib.sha256(compound_raw.encode("utf-8")).hexdigest()
             if recomputed != entry.entry_hash:

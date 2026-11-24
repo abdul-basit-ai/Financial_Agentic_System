@@ -26,13 +26,19 @@ class MemoryPromotionEngine:
         self.episodic_store = episodic_store or EpisodicMemoryStore()
 
     def promote_session(self, session_id: str, state: AgentStateV1) -> int | None:
-        # Promotion Filter: Do not record incomplete or failed sessions
-        if not state.final_answer and not state.sub_task_results:
+
+        if (
+            not state.is_terminal
+            or state.answer_status != "grounded"
+            or not state.citations
+            or not state.final_answer
+            or state.hitl_status not in {"APPROVED", "APPROVE"}
+            or any(not item.get("success") for item in state.tool_results)
+        ):
             return None
 
         importance = calculate_episode_importance(state)
 
-        # Distill key findings from state
         findings: dict[str, Any] = {
             "completed_tools": [tr.get("tool_name") for tr in state.tool_results],
             "sub_task_outputs": state.sub_task_results,

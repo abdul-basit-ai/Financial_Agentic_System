@@ -12,34 +12,316 @@
     "required": ["record_id"]
   },
   "output_schema": {
-    "type": "object",
-    "properties": {
-      "record_id": {"type": "string"},
-      "headers": {"type": "array", "items": {"type": "string"}},
-      "rows": {
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "row_index": {"type": "integer"},
-            "row_label": {"type": "string"},
-            "cells": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "column_index": {"type": "integer"},
-                  "column_header": {"type": "string"},
-                  "amount": {"type": ["number", "null"]},
-                  "year": {"type": ["integer", "null"]}
-                }
+    "$defs": {
+      "TableCell": {
+        "properties": {
+          "column_index": {
+            "title": "Column Index",
+            "type": "integer"
+          },
+          "column_header": {
+            "title": "Column Header",
+            "type": "string"
+          },
+          "amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
               }
-            }
+            ],
+            "title": "Amount"
+          },
+          "year": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Year"
+          },
+          "normalized_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Normalized Amount"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evidence Id"
+          },
+          "table_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Table Id"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Page"
+          },
+          "raw": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Raw"
+          },
+          "unit_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Unit Label"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Currency"
+          },
+          "quantity_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Quantity Kind"
+          },
+          "is_percentage": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Is Percentage"
+          },
+          "scale_multiplier": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Scale Multiplier"
+          },
+          "units_ambiguous": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Units Ambiguous"
+          },
+          "is_missing": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Is Missing"
           }
-        }
+        },
+        "required": [
+          "column_index",
+          "column_header",
+          "amount"
+        ],
+        "title": "TableCell",
+        "type": "object"
       },
-      "total_rows": {"type": "integer"},
-      "total_values": {"type": "integer"}
-    }
+      "TableRow": {
+        "properties": {
+          "row_index": {
+            "title": "Row Index",
+            "type": "integer"
+          },
+          "row_label": {
+            "title": "Row Label",
+            "type": "string"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/$defs/TableCell"
+            },
+            "title": "Cells",
+            "type": "array"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Evidence Id"
+          },
+          "table_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Table Id"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Page"
+          },
+          "gold_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gold Id"
+          }
+        },
+        "required": [
+          "row_index",
+          "row_label",
+          "cells"
+        ],
+        "title": "TableRow",
+        "type": "object"
+      }
+    },
+    "properties": {
+      "record_id": {
+        "title": "Record Id",
+        "type": "string"
+      },
+      "headers": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Headers",
+        "type": "array"
+      },
+      "rows": {
+        "items": {
+          "$ref": "#/$defs/TableRow"
+        },
+        "title": "Rows",
+        "type": "array"
+      },
+      "total_rows": {
+        "title": "Total Rows",
+        "type": "integer"
+      },
+      "total_values": {
+        "title": "Total Values",
+        "type": "integer"
+      },
+      "source_file": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Source File"
+      }
+    },
+    "required": [
+      "record_id",
+      "headers",
+      "rows",
+      "total_rows",
+      "total_values"
+    ],
+    "title": "TableExtractOutput",
+    "type": "object"
   }
 }

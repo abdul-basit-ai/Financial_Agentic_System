@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import ast
+import math
 import re
 
 from agent.tools.safe_math import SafeMathInput, safe_math_tool
@@ -28,7 +30,6 @@ def requires_derived_program(question: str) -> bool:
             "decrease",
             "decline",
             "growth",
-            "how much",
             "market capitalization",
         )
     )
@@ -71,11 +72,20 @@ def execute_grounded_expression(
 ) -> tuple[float, list[str]] | None:
     """Executes only safe arithmetic whose literals occur in evidence/question."""
     flags = program_validation_flags(question, expression)
-    for token in _NUMBER_RE.findall(expression):
-        value = float(token)
-        # Standard financial constants are allowed for percentage conversions.
-        if value not in allowed_values and value not in {1.0, 2.0, 3.0, 100.0, 1000.0}:
-            return None
+    try:
+        tree = ast.parse(expression.strip(), mode="eval")
+    except (SyntaxError, ValueError):
+        return None
+    for literal in ast.walk(tree):
+        if isinstance(literal, ast.Constant):
+            value = literal.value
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(value)
+                or value not in allowed_values
+            ):
+                return None
     result = safe_math_tool(SafeMathInput(expression=expression))
     if not result.success or result.data is None:
         return None

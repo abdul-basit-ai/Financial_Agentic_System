@@ -21,23 +21,17 @@ from agent.telemetry import (
     trace_operation,
 )
 
-# =====================================================================
-# 1. LangSmith Free-Tier Quota & Budget Tests
-# =====================================================================
-
 
 def test_quota_guard_budget_ceiling_enforcement() -> None:
     QUOTA_GUARD.reset_counter()
-    QUOTA_GUARD.max_budget = 5  # Set small budget for test
+    QUOTA_GUARD.max_budget = 5
 
-    # Simulate API Key presence
     os.environ["LANGSMITH_API_KEY"] = "lsv2_test_token"
 
     for _ in range(5):
         assert QUOTA_GUARD.should_trace() is True
         QUOTA_GUARD.record_trace()
 
-    # Once 5 is reached, tracing must shut off to protect free quota
     assert QUOTA_GUARD.should_trace() is False
     status = QUOTA_GUARD.get_status()
     assert status.is_budget_exceeded is True
@@ -49,11 +43,9 @@ def test_quota_guard_evaluation_project_isolation() -> None:
     QUOTA_GUARD.max_budget = 4500
     os.environ["LANGSMITH_API_KEY"] = "lsv2_test_token"
 
-    # Interactive mode configuration
     init_telemetry(is_eval_mode=False)
     assert os.getenv("LANGSMITH_PROJECT") == "finagent-interactive"
 
-    # Batch evaluation mode configuration (switches project)
     init_telemetry(is_eval_mode=True)
     assert os.getenv("LANGSMITH_PROJECT") == "finagent-eval"
 
@@ -61,20 +53,14 @@ def test_quota_guard_evaluation_project_isolation() -> None:
 def test_quota_guard_sample_rate_governor() -> None:
     QUOTA_GUARD.reset_counter()
     QUOTA_GUARD.max_budget = 1000
-    QUOTA_GUARD.sample_rate = 0.0  # 0% sample rate
+    QUOTA_GUARD.sample_rate = 0.0
     os.environ["LANGSMITH_API_KEY"] = "lsv2_test_token"
 
-    # In eval mode with sample_rate=0.0, should_trace must return False
     assert QUOTA_GUARD.should_trace(is_eval_mode=True) is False
 
 
-# =====================================================================
-# 2. Token Economics & Cost Calculation Tests
-# =====================================================================
-
-
 def test_calculate_cost_gpt_4o() -> None:
-    # GPT-4o: $0.005/1k input, $0.015/1k output
+
     usage = calculate_cost(
         model_name="gpt-4o",
         prompt_tokens=2000,
@@ -83,30 +69,24 @@ def test_calculate_cost_gpt_4o() -> None:
     assert usage.prompt_tokens == 2000
     assert usage.completion_tokens == 1000
     assert usage.total_tokens == 3000
-    # Expected: (2 * 0.005) + (1 * 0.015) = 0.01 + 0.015 = $0.025
+
     assert usage.estimated_cost_usd == 0.025
 
 
 def test_calculate_cost_claude_haiku() -> None:
-    # Claude-3-Haiku: $0.00025/1k input, $0.00125/1k output
+
     usage = calculate_cost(
         model_name="claude-3-haiku",
         prompt_tokens=4000,
         completion_tokens=2000,
     )
-    # Expected: (4 * 0.00025) + (2 * 0.00125) = 0.001 + 0.0025 = $0.0035
+
     assert usage.estimated_cost_usd == 0.0035
-
-
-# =====================================================================
-# 3. Latency Percentiles Profiler Tests
-# =====================================================================
 
 
 def test_latency_profiler_quantiles() -> None:
     profiler = LatencyProfiler()
 
-    # Populate 100 observations from 1ms to 100ms
     for ms in range(1, 101):
         profiler.record(float(ms))
 
@@ -118,11 +98,6 @@ def test_latency_profiler_quantiles() -> None:
     assert stats.p95_ms == 95.0
     assert stats.p99_ms == 99.0
     assert stats.max_ms == 100.0
-
-
-# =====================================================================
-# 4. Tracing Decorator & Span Fallback Tests
-# =====================================================================
 
 
 def test_trace_operation_decorator() -> None:
@@ -138,7 +113,6 @@ def test_trace_operation_decorator() -> None:
     res = add_numbers(10, 20)
     assert res == 30
 
-    # Verify span was recorded locally
     assert len(LOCAL_TRACER.spans) == 1
     span = LOCAL_TRACER.spans[0]
     assert span.name == "test_math_op"

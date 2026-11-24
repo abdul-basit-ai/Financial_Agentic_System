@@ -22,8 +22,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from agent.graph import create_financial_agent  # noqa: E402
-from agent.state.schema import AgentStateV1  # noqa: E402
+from agent.graph import create_financial_agent
+from agent.state.schema import AgentStateV1
 
 MULTI_HOP_QUERY = "What was the change in Apple net sales from 2002 to 2003?"
 SINGLE_HOP_QUERY = "What was Apple net sales in 2002?"
@@ -100,13 +100,7 @@ def main() -> int:
     multi_summary = summarize(results["multi_hop"])
     single_summary = summarize(results["single_hop"])
 
-    # Sequential baseline estimate: if the multi-hop retrievals had run one
-    # after another, wall time ~= sum of their individual tool latencies +
-    # orchestration overhead. We approximate by comparing mean walls and
-    # reporting the parallel speedup factor.
-    naive_sequential_estimate = (
-        multi_summary["wall_ms_mean"] * 2.0
-    )  # 2 retrieval rounds serialized
+    naive_sequential_estimate = multi_summary["wall_ms_mean"] * 2.0
     report = {
         "multi_hop_query": MULTI_HOP_QUERY,
         "single_hop_query": SINGLE_HOP_QUERY,

@@ -18,9 +18,8 @@ from pydantic import BaseModel, Field
 from agent.tools.base import ToolResult
 
 YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
-# "average payment volume per transaction" / "revenue per employee" /
-# "operating margin as a percentage of sales" — a ratio between two column
-# or line-item phrases named IN the question itself.
+
+
 PER_RATIO_RE = re.compile(
     r"\b(?:average\s+|avg\s+)?([a-z][a-z \-]{2,40}?)\s+(?:per|/\s*|as a percentage of|as a % of)\s+([a-z][a-z \-]{2,40})",
     re.IGNORECASE,
@@ -89,8 +88,8 @@ _QUESTION_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 _LEADING_NOISE_RE = re.compile(r"^(?:the|a|an|average|avg)\s+", re.IGNORECASE)
-# Connectors end a metric phrase: "transaction FOR american express" is not
-# the denominator the question names.
+
+
 _PHRASE_CUT_RE = re.compile(
     r"\s+\b(?:for|of|in|at|during|by|from|to|and)\b\s+.*$", re.IGNORECASE
 )
@@ -128,11 +127,6 @@ def decompose_query(query: str, company: str = "UNKNOWN") -> DecompositionOutput
     sub_tasks: list[SubTask] = [_vector_anchor_task(company, clean_q)]
     is_multi_hop = False
 
-    # Pattern P: per-ratio ("average payment volume per transaction") — two
-    # operands named in the question, quotient is the answer. This ratio
-    # family is unreachable by the keyword list; the operands come straight
-    # from the question text and the graph tool's word-level matching binds
-    # them to row labels / column headers.
     per_parts = _per_ratio_parts(clean_q)
     if per_parts:
         numerator, denominator = per_parts
@@ -176,10 +170,6 @@ def decompose_query(query: str, company: str = "UNKNOWN") -> DecompositionOutput
             reasoning_plan=plan,
         )
 
-    # Pattern A: Difference / YoY change between two fiscal years.
-    # Growth-rate phrasing requires a RELATIVE change: divide the difference
-    # by the base year. Plain subtract systematically mis-answered every
-    # growth/ratio question even with perfect retrieval.
     if len(years_sorted) >= 2 and any(
         w in low_q for w in ["change", "difference", "increase", "decrease", "growth"]
     ):
@@ -212,7 +202,7 @@ def decompose_query(query: str, company: str = "UNKNOWN") -> DecompositionOutput
             },
             dependencies=["task_1"],
         )
-        # Concrete values are injected into the expression prior to execution
+
         expression = (
             "divide(subtract(task_3.amount, task_2.amount), task_2.amount)"
             if relative
@@ -226,7 +216,6 @@ def decompose_query(query: str, company: str = "UNKNOWN") -> DecompositionOutput
         )
         sub_tasks.extend([t2, t3, t4])
 
-    # Pattern B: Explanation query requiring narrative and tabular evidence
     elif any(w in low_q for w in ["why", "reason", "drive", "driven", "cause"]):
         is_multi_hop = True
         plan = "Anchor to the right filing, then retrieve its numbers and explanatory commentary together."
@@ -243,7 +232,6 @@ def decompose_query(query: str, company: str = "UNKNOWN") -> DecompositionOutput
         )
         sub_tasks.append(t2)
 
-    # Default: Single-hop graph lookup, still anchored
     else:
         plan = f"Anchor to the right {company} filing, then look up the {metric_hint or 'requested'} line items."
 

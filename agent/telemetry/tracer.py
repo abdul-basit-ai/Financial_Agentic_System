@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import functools
+import os
 import time
 from collections.abc import Callable
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from pydantic import BaseModel, Field
 
@@ -13,11 +14,14 @@ from agent.telemetry.quota import QUOTA_GUARD
 
 T = TypeVar("T")
 
-# Safe import of LangSmith traceable
+
+ls_traceable: Any = None
 try:
-    from langsmith import traceable as ls_traceable
+    from langsmith import traceable as _ls_traceable
+
+    ls_traceable = _ls_traceable
 except ImportError:
-    ls_traceable = None  # type: ignore[assignment]
+    ls_traceable = None
 
 
 class TraceSpanRecord(BaseModel):
@@ -39,6 +43,8 @@ class LocalTraceCollector:
 
     def add_span(self, span: TraceSpanRecord) -> None:
         self.spans.append(span)
+        if len(self.spans) > 1000:
+            del self.spans[:-1000]
 
     def clear(self) -> None:
         self.spans.clear()
@@ -56,6 +62,9 @@ def init_telemetry(
     QUOTA_GUARD.max_budget = max_budget
     QUOTA_GUARD.sample_rate = sample_rate
     QUOTA_GUARD.configure_environment(is_eval_mode=is_eval_mode)
+    if os.getenv("FINAGENT_ENABLE_REMOTE_TRACING", "0") != "1":
+        os.environ["LANGCHAIN_TRACING_V2"] = "false"
+        os.environ["LANGSMITH_TRACING"] = "false"
 
 
 def trace_operation(
@@ -77,14 +86,16 @@ def trace_operation(
             err_msg: str | None = None
             output: Any = None
 
-            # Decide tracing at call time: env config may change after import
-            should_send = QUOTA_GUARD.should_trace()
+            should_send = (
+                os.getenv("FINAGENT_ENABLE_REMOTE_TRACING", "0") == "1"
+                and QUOTA_GUARD.should_trace()
+            )
             if should_send:
                 QUOTA_GUARD.record_trace(actually_traced=True)
 
             try:
                 if should_send and ls_traceable is not None:
-                    wrapped = ls_traceable(  # type: ignore[call-overload]
+                    wrapped = ls_traceable(
                         name=name,
                         run_type=run_type,
                         metadata=metadata or {},
@@ -92,7 +103,7 @@ def trace_operation(
                     output = wrapped(*args, **kwargs)
                 else:
                     output = fn(*args, **kwargs)
-                return output  # type: ignore[no-any-return]
+                return cast(T, output)
             except Exception as exc:
                 err_msg = str(exc)
                 raise

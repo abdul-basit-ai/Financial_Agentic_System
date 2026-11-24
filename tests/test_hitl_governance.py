@@ -24,13 +24,9 @@ from agent.guardrails.risk_engine import (
 )
 from agent.state.schema import AgentStateV1
 
-# =====================================================================
-# Statistical & Financial Risk Tests
-# =====================================================================
-
 
 def test_benford_law_conformity() -> None:
-    # 1. Synthesize Benford-distributed numbers: P(d) = log10(1 + 1/d)
+
     benford_numbers = []
     for d in range(1, 10):
         count = int(math.log10(1.0 + 1.0 / d) * 300)
@@ -40,7 +36,6 @@ def test_benford_law_conformity() -> None:
     assert is_ok is True
     assert chi_sq <= 20.09
 
-    # 2. Fabricate uniform distribution (violates Benford's Law)
     uniform_numbers = []
     for d in range(1, 10):
         uniform_numbers.extend([float(d * 100 + i) for i in range(50)])
@@ -51,12 +46,12 @@ def test_benford_law_conformity() -> None:
 
 
 def test_modified_z_score_mad_detection() -> None:
-    # Typical filing values with one extreme outlier
+
     values = [100.0, 102.0, 98.0, 105.0, 101.0, 99.0, 1000.0]
     z_scores = compute_modified_z_scores(values)
 
     assert len(z_scores) == len(values)
-    # The outlier (1000.0) must exceed the 3.5 MAD threshold
+
     assert abs(z_scores[-1]) > 3.5
     assert abs(z_scores[0]) < 3.5
 
@@ -71,12 +66,12 @@ def test_financial_risk_engine_triggers_on_anomalies() -> None:
                         {
                             "row_label": "Operating Margin",
                             "column_header": "operating margin ( % )",
-                            "amount": 145.0,  # Impossible margin > 100%
+                            "amount": 145.0,
                             "normalized_amount": None,
                         },
                         {
                             "row_label": "Goodwill Impairment",
-                            "amount": 2_500_000_000.0,  # Material figure (raw table units)
+                            "amount": 2_500_000_000.0,
                             "normalized_amount": 2_500_000_000.0,
                         },
                     ]
@@ -93,15 +88,9 @@ def test_financial_risk_engine_triggers_on_anomalies() -> None:
     assert any(r.category == "MATERIALITY" for r in result.reasons)
 
 
-# =====================================================================
-# Cryptographic Merkle Audit Trail Tests
-# =====================================================================
-
-
 def test_merkle_audit_ledger_integrity_and_tamper_detection() -> None:
     ledger = MerkleAuditLedger()
 
-    # Record legitimate transitions
     ledger.record_transition(
         trace_id="trace_001",
         node_name="plan",
@@ -124,21 +113,14 @@ def test_merkle_audit_ledger_integrity_and_tamper_detection() -> None:
         state_payload={"action": "APPROVE"},
     )
 
-    # 1. Verify clean ledger
     is_valid, msg = ledger.verify_integrity()
     assert is_valid is True
     assert "Zero discrepancies" in msg
 
-    # 2. Tamper with record 1 payload hash
     ledger.entries[1].state_hash = "f" * 64
     is_tampered, tamper_msg = ledger.verify_integrity()
     assert is_tampered is False
     assert "Tampered record at index 1" in tamper_msg
-
-
-# =====================================================================
-# End-to-End HITL Interruption & Resumption Tests
-# =====================================================================
 
 
 def test_end_to_end_hitl_workflow_execution() -> None:
@@ -152,7 +134,6 @@ def test_end_to_end_hitl_workflow_execution() -> None:
     )
     config = {"configurable": {"thread_id": session_id}}
 
-    # Execute workflow through completion or interrupt
     result = agent.invoke(state.model_dump(), config=config)
 
     assert result is not None
@@ -178,11 +159,10 @@ def test_hitl_interrupt_pauses_and_resume_approves() -> None:
     first = agent.invoke(state.model_dump(), config=config)
 
     if first["hitl_status"] == "PENDING" and "__interrupt__" in first:
-        # Graph is suspended at hitl_gate — verify interrupted state is durable
+
         snap = agent.get_state(config)
         assert snap.next, "Graph must be paused at hitl_gate"
 
-        # Human approves -> graph resumes to completion
         final = agent.invoke(
             Command(resume={"action": "APPROVE", "analyst_id": "analyst_42"}),
             config=config,
@@ -191,7 +171,7 @@ def test_hitl_interrupt_pauses_and_resume_approves() -> None:
         assert final["hitl_status"] in {"APPROVE", "APPROVED"}
         assert any("HITL Resolution" in log for log in final["scratchpad"])
     else:
-        # Low-risk trajectory auto-approved; gate legitimately not triggered
+
         assert final_is_terminal(first)
 
 

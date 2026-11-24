@@ -31,9 +31,6 @@ def _window_chunks(
         text = " ".join(window)
         chunks.append(
             {
-                # Global sentence indices across pre+post concatenation:
-                # FinQA gold_inds text_M indexes that same concatenation, so
-                # a gold sentence can be resolved to the chunk covering it.
                 "start_sentence": idx + index_offset,
                 "end_sentence": idx + len(window) - 1 + index_offset,
                 "text": text,
@@ -57,12 +54,12 @@ def chunk_context(
     (post chunks continue after pre), matching FinQA's gold text_M indexing.
     """
     pre = (
-        [str(s).strip() for s in pre_text if str(s).strip()]
+        [str(s).strip() if s is not None else "" for s in pre_text]
         if isinstance(pre_text, list)
         else []
     )
     post = (
-        [str(s).strip() for s in post_text if str(s).strip()]
+        [str(s).strip() if s is not None else "" for s in post_text]
         if isinstance(post_text, list)
         else []
     )

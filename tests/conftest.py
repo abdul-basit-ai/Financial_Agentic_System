@@ -22,11 +22,13 @@ import pytest
 
 def pytest_configure(config) -> None:
     if os.getenv("FINAGENT_TESTS_LLM", "").strip() != "1":
-        os.environ.setdefault("OPENAI_API_KEY", "")
-        os.environ.setdefault("OPENROUTER_API_KEY", "")
+        os.environ["OPENAI_API_KEY"] = ""
+        os.environ["OPENROUTER_API_KEY"] = ""
+        os.environ["FINAGENT_ENABLE_REMOTE_TRACING"] = "0"
+        os.environ["DATABASE_URL"] = ""
+        os.environ["SUPABASE_URL"] = ""
+        os.environ["FINAGENT_AUTH_MODE"] = "token"
 
-    # Install a lightweight SentenceTransformer stub BEFORE any project import
-    # can pull torch. This prevents multi-GB model downloads / OOM on 8GB hosts.
     if "sentence_transformers" not in sys.modules:
 
         class _FakeST:
@@ -49,9 +51,6 @@ def pytest_configure(config) -> None:
         mod = types.ModuleType("sentence_transformers")
         mod.SentenceTransformer = _FakeST
         sys.modules["sentence_transformers"] = mod
-
-
-# ─── Shared offline tool stubs ──────────────────────────────────────────────
 
 
 def _make_offline_tools():
@@ -107,7 +106,6 @@ def _make_offline_tools():
         )
 
     return {
-        "agent.nodes.memory_node.memory_retrieval_tool": _memory_stub,
         "agent.nodes.parallel_nodes.graph_retrieval_tool": _graph_stub,
         "agent.nodes.parallel_nodes.vector_retrieval_tool": _vector_stub,
         "agent.nodes.parallel_nodes.table_extract_tool": _table_stub,
@@ -124,7 +122,7 @@ def offline_tools(monkeypatch):
         return
 
     for target, fn in _make_offline_tools().items():
-        monkeypatch.setattr(target, fn)
+        monkeypatch.setattr(target, fn, raising=False)
 
     import agent.nodes.hitl_nodes as hitl_mod
     from agent.guardrails.audit import MerkleAuditLedger
@@ -132,19 +130,38 @@ def offline_tools(monkeypatch):
     monkeypatch.setattr(hitl_mod, "AUDIT_LEDGER", MerkleAuditLedger())
     monkeypatch.setattr(hitl_mod, "_schema_initialized", True)
 
-    monkeypatch.setattr(
-        "agent.nodes.memory_node.MemoryPromotionEngine.promote_session",
-        lambda self, session_id, state: None,
-    )
-
     from langgraph.checkpoint.memory import MemorySaver
 
     monkeypatch.setattr(
         "agent.memory.working.get_checkpointer", lambda redis_url=None: MemorySaver()
     )
 
-    # Skip persistent audit DB tests (Postgres may hang on connect forever)
-    monkeypatch.setattr(
-        "agent.guardrails.persistent_audit.PersistentMerkleAuditLedger.init_schema",
-        lambda self: False,
-    )
+
+@pytest.fixture
+def api_app(tmp_path, monkeypatch):
+    monkeypatch.setenv("FINAGENT_API_TOKEN", "test-worker-token")
+    monkeypatch.setenv("FINAGENT_AUTH_MODE", "token")
+    monkeypatch.setenv("DATABASE_URL", "")
+    monkeypatch.setenv("SUPABASE_URL", "")
+    monkeypatch.setenv("FINAGENT_DB_PATH", str(tmp_path / "workspace.sqlite3"))
+    monkeypatch.setenv("FINAGENT_FILES_PATH", str(tmp_path / "reports"))
+    monkeypatch.setenv("FINAGENT_AUDIT_PATH", str(tmp_path / "audit.sqlite3"))
+    monkeypatch.setenv("FINAGENT_EMBEDDED_WORKER", "1")
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from agent.graph import create_financial_agent
+    from agent.server.app import create_app
+
+    app = create_app()
+    app.state.agent = create_financial_agent(checkpointer=MemorySaver())
+    return app
+
+
+@pytest.fixture
+def api_client(api_app):
+    from fastapi.testclient import TestClient
+
+    with TestClient(
+        api_app, headers={"Authorization": "Bearer test-worker-token"}
+    ) as client:
+        yield client

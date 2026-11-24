@@ -1,254 +1,127 @@
-"""Deterministic arithmetic node resolving parameters from parallel sub-task results."""
+"""Resolve planned arithmetic against current retrievals and earlier calculations."""
 
 from __future__ import annotations
 
-import re
+import ast
+import json
 from typing import Any
 
-from agent.nodes.relevance import best_matching_record, question_terms, relevance_hits
+from agent.llm import invoke_llm, llm_usage_entry
+from agent.nodes.evidence_math import Operand, calculation_data, resolve_arithmetic
+from agent.nodes.plan_node import _extract_json
+from agent.nodes.relevance import best_matching_record, question_terms
+from agent.prompts import load_prompt
 from agent.state.schema import AgentStateV1
-from agent.tools.safe_math import SafeMathInput, safe_math_tool
 
 
-def _record_amount(record: dict[str, Any]) -> float | None:
-    amount = record.get("amount")
-    if amount is None:
-        amount = record.get("normalized_amount")
-    try:
-        return float(amount) if amount is not None else None
-    except (TypeError, ValueError):
-        return None
-
-
-def _pick_numeric_value(
+def select_record(
     records: list[dict[str, Any]],
-    q_terms: set[str],
-    task_year: int | None = None,
-    metric_hint: str | None = None,
-) -> float | None:
-    """Extracts the amount the dispatching task actually asked for.
-
-    Scoping order (each stage keeps its narrowing only when non-empty):
-    1. Task fiscal year — matched on Value.year or a year-as-row-label
-       (FinQA maturity schedules put years in row labels).
-    2. Task METRIC hint — picks the COLUMN (row label + column header
-       overlap with the hint's terms). Without this, a multi-operand plan
-       ("payment volume" and "transactions") resolves BOTH task_N.amount
-       references to the same top-relevance record: divide(x, x) = 1.0.
-       Row disambiguation among metric-matched candidates ALSO uses the
-       hint's terms: in region-labeled tables ("canada oil and gas" /
-       "total oil and gas") the hint carries the row discriminator, while
-       question terms may name the entity belonging to a DIFFERENT task's
-       operand ("...comes from canada?" pollutes the total-row task).
-    3. Question terms — row scope for hint-less tasks and hint ties.
-    4. Question-term best match / first record (previous behavior).
-    """
-    if not records:
-        return None
-
-    candidates = records
-
-    if task_year is not None:
-        year_str = str(task_year)
-        matched = [
-            rec
-            for rec in candidates
-            if rec.get("year") == task_year
-            or str(rec.get("row_label", "")).strip() == year_str
+    terms: set[str],
+    year: int | None = None,
+    metric: str | None = None,
+) -> dict[str, Any] | None:
+    if year is not None:
+        records = [
+            r
+            for r in records
+            if str(year)
+            in {
+                str(r.get("year")),
+                str(r.get("column_header", "")).strip(),
+                str(r.get("row_label", "")).strip(),
+            }
         ]
-        if matched:
-            candidates = matched
-
-    if metric_hint:
-        m_terms = question_terms(metric_hint)
-        if m_terms:
-            hits = [
-                relevance_hits(
-                    f"{rec.get('row_label', '')} {rec.get('column_header', '')}",
-                    m_terms,
-                )
-                for rec in candidates
-            ]
-            top = max(hits)
-            if top > 0:
-                candidates = [rec for rec, h in zip(candidates, hits) if h == top]
-                row_hits = [
-                    relevance_hits(str(rec.get("row_label", "")), m_terms)
-                    for rec in candidates
-                ]
-                top_row = max(row_hits)
-                if top_row > 0:
-                    candidates = [
-                        rec for rec, h in zip(candidates, row_hits) if h == top_row
-                    ]
-                if len(candidates) == 1:
-                    return _record_amount(candidates[0])
-
-    row_hits = [
-        relevance_hits(str(rec.get("row_label", "")), q_terms) for rec in candidates
-    ]
-    top_row = max(row_hits)
-    if top_row > 0:
-        candidates = [rec for rec, h in zip(candidates, row_hits) if h == top_row]
-
-    if len(candidates) == 1:
-        return _record_amount(candidates[0])
-
-    best = best_matching_record(candidates, q_terms)
-    if best is None:
+    required = question_terms(metric or "") or terms
+    match = best_matching_record(records, required)
+    if match is None:
         return None
-    return _record_amount(best)
-
-
-def _resolve_dynamic_expression(
-    expression: str,
-    tool_results: list[dict[str, Any]],
-    sub_task_results: dict[str, Any] | None = None,
-    q_terms: set[str] | None = None,
-    task_years: dict[str, int | None] | None = None,
-    task_metrics: dict[str, str | None] | None = None,
-) -> str:
-    """Substitutes dynamic task references (e.g., task_1.amount) with concrete values."""
-    resolved = expression
-    pattern = re.compile(r"\b(task_\d+)\.amount\b")
-    matches = pattern.findall(expression)
-    q_terms = q_terms or set()
-    task_years = task_years or {}
-    task_metrics = task_metrics or {}
-
-    # Build lookup map: task_id -> numeric amount
-    lookup: dict[str, float] = {}
-
-    def _value_from(
-        data: Any, task_year: int | None, metric_hint: str | None
-    ) -> float | None:
-        if not isinstance(data, dict):
-            return None
-        records = data.get("records", [])
-        if records:
-            value = _pick_numeric_value(records, q_terms, task_year, metric_hint)
-            if value is not None:
-                return value
-        result = data.get("result")
-        try:
-            return float(result) if result is not None else None
-        except (TypeError, ValueError):
-            return None
-
-    # Check parallel sub_task_results first
-    if sub_task_results:
-        for t_id, envelope in sub_task_results.items():
-            value = (
-                _value_from(
-                    envelope.get("data"), task_years.get(t_id), task_metrics.get(t_id)
-                )
-                if isinstance(envelope, dict)
-                else None
-            )
-            if value is not None:
-                lookup[t_id] = value
-
-    # Supplement with sequential tool_results
-    for res in tool_results:
-        res_id: Any = res.get("task_id")
-        if not res_id or res_id in lookup:
-            continue
-        value = _value_from(
-            res.get("data"), task_years.get(str(res_id)), task_metrics.get(str(res_id))
-        )
-        if value is not None:
-            lookup[res_id] = value
-
-    for m in matches:
-        if m in lookup:
-            resolved = resolved.replace(f"{m}.amount", str(lookup[m]))
-
-    return resolved
+    labels = question_terms(
+        f"{match.get('row_label', '')} {match.get('column_header', '')}"
+    )
+    if metric and not required.issubset(labels):
+        return None
+    return match
 
 
 def compute_node(state: AgentStateV1) -> dict[str, Any]:
-    """Executes safe arithmetic calculations using AST evaluator."""
-    remaining_calls: list[dict[str, Any]] = []
-    executed_results: list[dict[str, Any]] = []
-    sub_task_updates: dict[str, Any] = {}
-    scratchpad_logs: list[str] = []
+    calls = {call["task_id"]: call for call in state.tool_calls}
+    completed = {r["task_id"]: r for r in state.tool_results if r.get("task_id")}
+    completed.update(state.sub_task_results)
+    updates: dict[str, dict[str, Any]] = {}
+    remaining: list[dict[str, Any]] = []
+    logs: list[str] = []
+    usage: list[dict[str, Any]] = []
+    for task_id, call in calls.items():
+        if call.get("target_tool") != "safe_math" or call.get("status") != "PENDING":
+            remaining.append(call)
+            continue
+        dependencies = set(call.get("dependencies", []))
 
-    # Map each retrieval task to the fiscal year AND metric hint it was
-    # dispatched for, so math references pick the value tied to THAT task's
-    # year and COLUMN instead of an arbitrary record from the result set.
-    task_years: dict[str, int | None] = {}
-    task_metrics: dict[str, str | None] = {}
-    for call in state.tool_calls:
-        if call.get("target_tool") in {"graph_retrieval", "vector_retrieval"}:
-            payload = call.get("payload", {})
-            year = payload.get("year")
-            metric = payload.get("metric_name")
-            task_years[str(call.get("task_id"))] = (
-                int(year) if year is not None else None
-            )
-            task_metrics[str(call.get("task_id"))] = str(metric) if metric else None
-
-    for call in state.tool_calls:
-        if call.get("target_tool") == "safe_math" and call.get("status") == "PENDING":
-            raw_expr = call.get("payload", {}).get("expression", "")
-            concrete_expr = _resolve_dynamic_expression(
-                raw_expr,
-                state.tool_results,
-                state.sub_task_results,
-                q_terms=question_terms(state.input),
-                task_years=task_years,
-                task_metrics=task_metrics,
-            )
-
-            # If dynamic references remain unresolved, the dependency tasks
-            # produced no usable values (e.g. retrieval found nothing). Fail
-            # THIS task cleanly instead of calling safe_math and crashing with
-            # a confusing ASTSecurityError on 'task_2.amount'.
-            unresolved = re.findall(r"\btask_\d+\.amount\b", concrete_expr)
-            if unresolved:
-                error_msg = (
-                    f"Cannot evaluate expression: no numeric data for "
-                    f"{', '.join(sorted(set(unresolved)))} (dependency retrieval "
-                    f"returned no records)."
+        def source(node: ast.expr) -> Operand | None:
+            if not isinstance(node, ast.Attribute) or not isinstance(
+                node.value, ast.Name
+            ):
+                return None
+            ref = node.value.id
+            if node.attr != "amount" or ref not in dependencies:
+                raise ValueError("Undeclared calculation dependency")
+            env = completed.get(ref) or {}
+            data = env.get("data") or {}
+            if not env.get("success"):
+                raise ValueError("Missing successful dependency")
+            if env.get("tool_name") == "safe_math" and data.get("citations"):
+                return Operand(
+                    repr(float(data["result"])),
+                    data["citations"],
+                    data["unit_label"],
+                    data["scale_multiplier"],
                 )
-                task_id = call.get("task_id", "task_math")
-                executed_results.append(
-                    {
-                        "task_id": task_id,
-                        "tool_name": "safe_math",
-                        "success": False,
-                        "data": None,
-                        "error": error_msg,
-                    }
-                )
-                scratchpad_logs.append(
-                    f"[Safe Math] Skipped '{raw_expr}' -> {error_msg}"
-                )
-                continue
-
-            result = safe_math_tool(SafeMathInput(expression=concrete_expr))
-            task_id = call.get("task_id", "task_math")
-
-            envelope = {
-                "task_id": task_id,
-                "tool_name": "safe_math",
-                "success": result.success,
-                "data": result.data.model_dump() if result.data else None,
-                "error": result.error,
-            }
-            executed_results.append(envelope)
-            sub_task_updates[task_id] = envelope
-
-            val = result.data.formatted if result.data else "ERROR"
-            scratchpad_logs.append(
-                f"[Safe Math] Evaluated '{concrete_expr}' -> Result: {val}"
+            payload = calls.get(ref, {}).get("payload", {})
+            record = select_record(
+                data.get("records", []),
+                question_terms(state.input),
+                payload.get("year"),
+                payload.get("metric_name"),
             )
-        else:
-            remaining_calls.append(dict(call))
+            if record is None:
+                raise ValueError("Missing or ambiguous evidence for " + ref)
+            return Operand.from_record(record)
 
+        program = call.get("payload", {}).get("expression", "")
+        envelope: dict[str, Any] = {"task_id": task_id, "tool_name": "safe_math"}
+        try:
+            operand = resolve_arithmetic(program, source)
+            data = calculation_data(operand, program)
+            if call.get("verify_formula"):
+                proposal = {"question": state.input, "candidates": [data]}
+                verdict = invoke_llm(
+                    system_prompt=load_prompt("program_verify_v1")[0],
+                    user_prompt=json.dumps(proposal),
+                    task="verifier",
+                    max_tokens=300,
+                    temperature=0.0,
+                )
+                usage.append(llm_usage_entry("verifier", verdict))
+                parsed = (_extract_json(verdict.content) if verdict else None) or {}
+                selected = parsed.get("selected_index")
+                if (
+                    type(selected) is not int
+                    or selected != 0
+                    or parsed.get("corrected_expression") is not None
+                ):
+                    raise ValueError("Verifier did not confirm planned arithmetic")
+            envelope.update(success=True, data=data, error=None)
+            logs.append(f"[Safe Math] {data['expression']} = {data['formatted']}")
+        except (ValueError, ArithmeticError, TypeError, SyntaxError) as exc:
+            envelope.update(success=False, data=None, error=str(exc))
+            logs.append(f"[Safe Math] {task_id} failed: {exc}")
+        completed[task_id] = updates[task_id] = envelope
+        remaining.append({**call, "status": "COMPLETED"})
     return {
-        "tool_calls": remaining_calls,
-        "tool_results": executed_results,
-        "sub_task_results": sub_task_updates,
-        "scratchpad": scratchpad_logs,
+        "tool_calls": remaining,
+        "tool_results": list(updates.values()),
+        "sub_task_results": updates,
+        "scratchpad": logs,
+        "risk_evaluated": False,
+        "llm_usage": usage,
     }

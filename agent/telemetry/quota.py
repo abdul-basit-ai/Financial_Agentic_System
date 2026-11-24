@@ -14,7 +14,7 @@ import random
 from pydantic import BaseModel
 
 DEFAULT_MONTHLY_FREE_QUOTA = 5000
-DEFAULT_SAFETY_CEILING = 4500  # Leaves 500 traces for ad-hoc debugging
+DEFAULT_SAFETY_CEILING = 4500
 
 
 class QuotaStatus(BaseModel):
@@ -51,7 +51,6 @@ class LangSmithQuotaGuard:
         if self.trace_counter >= self.max_budget:
             return False
 
-        # In evaluation mode, apply sampling to conserve quota
         if is_eval_mode:
             if self.sample_rate < 1.0 and random.random() > self.sample_rate:
                 return False
@@ -94,5 +93,4 @@ class LangSmithQuotaGuard:
         self.trace_counter = 0
 
 
-# Global singleton instance
 QUOTA_GUARD = LangSmithQuotaGuard()

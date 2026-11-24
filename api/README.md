@@ -1,22 +1,33 @@
-# API
+# FastAPI gateway
 
-This package re-exports the production gateway: `api.main:app` IS
-`agent.server.app:app` (FastAPI + LangGraph agent, SSE streaming, HITL
-governance endpoints). It used to be a bare `/health` stub, which made it easy
-to accidentally serve an API without the agent wired in.
+`api.main:app` re-exports `agent.server.app:app`. Both import paths serve the
+same authenticated API and readiness checks.
 
-Run either way:
+For local token-authenticated development, provide `FINAGENT_API_TOKEN` and
+start the app with the local environment file:
 
 ```bash
-uvicorn agent.server.app:app --host 0.0.0.0 --port 8000
-# or equivalently
-uvicorn api.main:app --host 0.0.0.0 --port 8000
+uv run --env-file .env uvicorn agent.server.app:app --host 127.0.0.1 --port 8000
 ```
 
-Key endpoints:
+Production mode uses `FINAGENT_AUTH_MODE=supabase`, Supabase Auth, private
+Storage, and a Supabase Postgres `DATABASE_URL`. Apply `supabase/schema.sql`
+manually before starting the services. The API does not apply the application
+schema at startup; the LangGraph Postgres checkpointer initializes its own
+checkpoint tables during API startup. Keep Supabase secret keys, database
+credentials, and provider keys on the API and worker only.
 
-- `GET /health`, `GET /healthz` — liveness (used by K8s probes and UI status)
-- `POST /api/v1/query/stream` — SSE reasoning stream
-- `POST /api/v1/query/async` + `GET /api/v1/jobs/{id}` — background execution
-- `GET /api/v1/approvals` — HITL review queue
-- `GET /api/v1/threads/{id}/state`, `POST /api/v1/threads/{id}/resume` — inspect/resume paused threads
+`GET /health` is liveness. `GET /ready` checks the configured store,
+authentication configuration, and compiled agent.
+
+Public setup endpoints are `GET /api/v1/config`, `POST /api/v1/auth/login`, and
+`POST /api/v1/auth/refresh`. Protected endpoints require a bearer token. The
+document API supports listing, PDF upload, status inspection, evidence reading,
+download, and deletion within the authenticated user's ownership scope.
+
+Research and review endpoints include:
+
+- `POST /api/v1/query/stream` for authenticated SSE analysis
+- `GET /api/v1/approvals` for the owner's review queue
+- `GET /api/v1/threads/{id}/state` and `POST /api/v1/threads/{id}/resume`
+- `POST /api/v1/query/async` and `GET /api/v1/jobs/{id}` for durable jobs

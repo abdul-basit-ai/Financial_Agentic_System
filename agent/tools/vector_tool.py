@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from contextlib import closing
+from threading import Lock
 
 import psycopg2
 from psycopg2.extensions import connection
 from pydantic import BaseModel, Field
 
 from agent.tools.base import ToolResult
-
-EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
+from ingestion.graph_loader import source_page
+from knowledge.vector_store.search import (
+    embedding_model_name,
+    embedding_values,
+    search_embeddings,
+)
 
 
 class VectorSearchInput(BaseModel):
@@ -48,6 +53,11 @@ class VectorChunkRecord(BaseModel):
     chunk_index: int
     text_content: str
     similarity_score: float
+    evidence_id: str | None = None
+    page: int | None = None
+    sentence_start: int | None = None
+    sentence_end: int | None = None
+    gold_ids: list[str] = Field(default_factory=list)
 
 
 class VectorSearchOutput(BaseModel):
@@ -66,7 +76,7 @@ class VectorRetrievalTool:
         dbname: str | None = None,
         user: str | None = None,
         password: str | None = None,
-        model_name: str = EMBEDDING_MODEL_NAME,
+        model_name: str | None = None,
     ) -> None:
         self.host = host or os.getenv("POSTGRES_HOST", "localhost")
         self.port = port or int(os.getenv("POSTGRES_PORT", "5432"))
@@ -74,27 +84,19 @@ class VectorRetrievalTool:
         self.user = user or os.getenv("POSTGRES_USER", "postgres")
         self.password = password or os.getenv("POSTGRES_PASSWORD", "password")
 
-        # Imported here so importing this module does not pull torch
-        from sentence_transformers import SentenceTransformer
-
-        self.model = SentenceTransformer(model_name)
-        self._conn: connection | None = None
+        self.model_name = embedding_model_name(model_name)
+        self._encoder_lock = Lock()
 
     def _get_connection(self) -> connection:
-        if self._conn is None or self._conn.closed:
-            self._conn = psycopg2.connect(
-                host=self.host,
-                port=self.port,
-                dbname=self.dbname,
-                user=self.user,
-                password=self.password,
-            )
-        return self._conn
-
-    def close(self) -> None:
-        if self._conn is not None and not self._conn.closed:
-            self._conn.close()
-            self._conn = None
+        return psycopg2.connect(
+            host=self.host,
+            port=self.port,
+            dbname=self.dbname,
+            user=self.user,
+            password=self.password,
+            connect_timeout=3,
+            options="-c statement_timeout=15000 -c default_transaction_read_only=on",
+        )
 
     def search(
         self,
@@ -105,61 +107,51 @@ class VectorRetrievalTool:
         split: str | None = None,
         company_identifier: str | None = None,
     ) -> VectorSearchOutput:
-        conn = self._get_connection()
-        query_emb = self.model.encode(query_text, normalize_embeddings=True).tolist()
+        from agent.tools._clients import get_sentence_encoder
 
-        # Company scoping: record_ids carry the company as their path prefix
-        # (e.g. 'AMZN/2020/page_12.pdf-1'). Without this filter, chunks from
-        # unrelated filings dominate top-k and pollute synthesis.
-        company_prefix = (
-            f"{company_identifier.strip().upper()}/%"
-            if company_identifier
-            and company_identifier.strip().upper() not in {"UNKNOWN", "N/A", ""}
-            else None
-        )
-
-        sql = """
-        SELECT
-            record_id,
-            filename,
-            section,
-            chunk_index,
-            text_content,
-            1.0 - (embedding <=> %(embedding)s::vector) AS similarity
-        FROM document_chunks
-        WHERE (%(record_id)s IS NULL OR record_id = %(record_id)s)
-          AND (%(record_ids)s IS NULL OR record_id = ANY(%(record_ids)s))
-          AND (%(company_prefix)s IS NULL OR record_id ILIKE %(company_prefix)s)
-          AND (%(split)s IS NULL OR split = %(split)s)
-        ORDER BY embedding <=> %(embedding)s::vector
-        LIMIT %(limit)s;
-        """
-
-        # Pass str(query_emb) so psycopg2 formats '[...]' rather than PostgreSQL array '{...}'
-        params: dict[str, Any] = {
-            "embedding": str(query_emb),
-            "record_id": record_id,
-            "record_ids": record_ids,
-            "company_prefix": company_prefix,
-            "split": split,
-            "limit": top_k,
-        }
-
-        with conn.cursor() as cur:
-            cur.execute(sql, params)
-            rows = cur.fetchall()
-
-        records = [
-            VectorChunkRecord(
-                record_id=r[0],
-                filename=r[1],
-                section=r[2],
-                chunk_index=r[3],
-                text_content=r[4],
-                similarity_score=float(r[5]),
+        if record_ids == []:
+            return VectorSearchOutput(query=query_text, chunks=[], total_found=0)
+        company = (company_identifier or "").strip().upper()
+        with self._encoder_lock:
+            encoder = get_sentence_encoder(self.model_name)
+            query_emb = embedding_values(
+                encoder.encode(query_text, normalize_embeddings=True)
             )
-            for r in rows
-        ]
+
+        with closing(self._get_connection()) as conn, conn:
+            rows = search_embeddings(
+                conn,
+                query_emb,
+                self.model_name,
+                top_k,
+                record_id=record_id,
+                record_ids=record_ids,
+                company=None if company in {"UNKNOWN", "N/A", ""} else company,
+                split=split,
+            )
+
+        records = []
+        for rid, filename, section, index, contents, score, start, end, version in rows:
+            gold_ids = (
+                [f"text_{position}" for position in range(start, end + 1)]
+                if version == "2" and start is not None and end is not None
+                else []
+            )
+            records.append(
+                VectorChunkRecord(
+                    record_id=rid,
+                    filename=filename,
+                    section=section,
+                    chunk_index=index,
+                    text_content=contents,
+                    similarity_score=float(score),
+                    evidence_id=f"chunk::{rid}::{section}::{index}",
+                    page=source_page(filename or ""),
+                    sentence_start=start,
+                    sentence_end=end,
+                    gold_ids=gold_ids,
+                )
+            )
 
         return VectorSearchOutput(
             query=query_text,
@@ -173,8 +165,7 @@ def vector_retrieval_tool(
 ) -> ToolResult[VectorSearchOutput]:
     """Instrumented tool entrypoint for semantic vector retrieval."""
     if client is None:
-        # Cached process-wide singleton: avoids reloading the sentence
-        # encoder on every call (see agent/tools/_clients.py).
+
         from agent.tools._clients import get_vector_tool_client
 
         instance: VectorRetrievalTool = get_vector_tool_client()

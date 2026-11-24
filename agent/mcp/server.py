@@ -1,6 +1,6 @@
 """Autonomous Financial Reasoning Agent - Model Context Protocol (MCP) Server.
 
-Exposes tools, resources, and prompt templates over stdio / SSE transports.
+Exposes read-only benchmark tools and arithmetic through trusted local stdio.
 """
 
 from __future__ import annotations
@@ -32,16 +32,10 @@ from agent.tools import (
     vector_retrieval_tool,
 )
 
-# Initialize Standalone FastMCP Server
 mcp = FastMCP(
     name="FinancialReasoningServer",
-    instructions="Production MCP Server exposing financial knowledge graphs, vector retrieval, deterministic math, and sandboxed code execution.",
+    instructions="Trusted local MCP server exposing benchmark retrieval and deterministic arithmetic. Private uploaded reports are served only by the authenticated worker API.",
 )
-
-
-# =====================================================================
-# 1. MCP Tools (Dynamic Model-Controlled Actions)
-# =====================================================================
 
 
 @mcp.tool(
@@ -106,10 +100,6 @@ def tool_vector_retrieval(
     return json.dumps({"error": result.error})
 
 
-@mcp.tool(
-    name="code_interpreter",
-    description="Executes arbitrary Python data science and modeling scripts (pandas, numpy, scipy) inside a hardened, air-gapped sandbox.",
-)
 def tool_code_interpreter(
     code: str,
     input_variables: dict[str, Any] | None = None,
@@ -150,10 +140,6 @@ def tool_context_fusion(
     return json.dumps({"error": result.error})
 
 
-@mcp.tool(
-    name="memory_retrieval",
-    description="Queries historical episodic interaction summaries and procedural trajectory archetypes using multi-factor exponential decay scoring.",
-)
 def tool_memory_retrieval(
     query_text: str,
     company_identifier: str | None = None,
@@ -170,11 +156,6 @@ def tool_memory_retrieval(
     if result.success and result.data:
         return json.dumps(result.data.model_dump())
     return json.dumps({"error": result.error})
-
-
-# =====================================================================
-# 2. MCP Resources (Passive Context Streams)
-# =====================================================================
 
 
 @mcp.resource("financial://schema/neo4j")
@@ -195,11 +176,6 @@ def resource_filing_reference(record_id: str) -> str:
     return get_filing_reference_resource(record_id)
 
 
-# =====================================================================
-# 3. MCP Prompts (Server-Controlled Behavioral Recipes)
-# =====================================================================
-
-
 @mcp.prompt(name="financial_analysis_plan")
 def prompt_financial_analysis_plan(
     company: str, target_metric: str, periods: str
@@ -212,7 +188,7 @@ def prompt_financial_analysis_plan(
         "Execution Steps:\n"
         f"1. Query the knowledge graph for {target_metric} across all target periods ({periods}).\n"
         "2. Query the vector store for management discussion (MD&A) explaining changes across these periods.\n"
-        "3. Compute YoY growth rates, differences, or margin ratios using safe_math or code_interpreter.\n"
+        "3. Compute YoY growth rates, differences, or margin ratios using safe_math.\n"
         "4. Synthesize your answer with exact filing numerical citations."
     )
 
@@ -229,5 +205,9 @@ def prompt_yoy_reconciliation(company: str, year_a: int, year_b: int) -> str:
 
 
 if __name__ == "__main__":
-    # Runs the MCP server via stdio transport when executed directly
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Trusted local financial MCP server")
+    parser.add_argument("--transport", choices=["stdio"], default="stdio")
+    parser.parse_args()
     mcp.run(transport="stdio")

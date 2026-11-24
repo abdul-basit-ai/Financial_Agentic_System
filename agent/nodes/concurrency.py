@@ -21,8 +21,6 @@ import threading
 import time
 from typing import Any
 
-# Hard per-tool concurrency caps. Neo4j community default pool is 100; pgvector
-# compose instance comfortably handles 10; safe_math is CPU-bound and cheap.
 TOOL_CONCURRENCY_LIMITS: dict[str, int] = {
     "graph_retrieval": 4,
     "vector_retrieval": 4,
@@ -30,8 +28,7 @@ TOOL_CONCURRENCY_LIMITS: dict[str, int] = {
 }
 DEFAULT_LIMIT = 4
 
-# Max seconds a worker may wait for a slot before executing anyway with a
-# contention warning. Prevents indefinite stalls if a downstream tool hangs.
+
 MAX_WAIT_SECONDS = 30.0
 
 _semaphores: dict[str, threading.BoundedSemaphore] = {}
@@ -105,7 +102,6 @@ class ToolSlot:
     Usage:
         with ToolSlot("graph_retrieval") as slot:
             result = graph_retrieval_tool(payload)
-        # slot.wait_seconds / slot.status feed metrics logging
     """
 
     def __init__(self, tool_name: str) -> None:

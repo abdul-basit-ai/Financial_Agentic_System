@@ -23,11 +23,6 @@ def bridge() -> MCPClientBridge:
     return MCPClientBridge(server_instance=mcp)
 
 
-# =====================================================================
-# 1. Discovery & Protocol Compliance Tests
-# =====================================================================
-
-
 def test_mcp_tools_discovery(bridge: MCPClientBridge) -> None:
     tools = bridge.list_tools()
     tool_names = {t.name for t in tools}
@@ -36,16 +31,13 @@ def test_mcp_tools_discovery(bridge: MCPClientBridge) -> None:
         "safe_math",
         "graph_retrieval",
         "vector_retrieval",
-        "code_interpreter",
         "context_fusion",
-        "memory_retrieval",
     }
 
     assert expected_tools.issubset(
         tool_names
     ), f"Missing MCP tools: {expected_tools - tool_names}"
 
-    # Verify input schema presence
     for t in tools:
         assert isinstance(t.input_schema, dict)
         assert len(t.description) > 10
@@ -70,11 +62,6 @@ def test_mcp_resource_read_prompt(bridge: MCPClientBridge) -> None:
     assert "Financial Planning Agent" in prompt_data["template"]
 
 
-# =====================================================================
-# 2. Tool Execution via MCP Client Bridge
-# =====================================================================
-
-
 def test_mcp_safe_math_execution(bridge: MCPClientBridge) -> None:
     args = {"expression": "divide(subtract(1500, 1000), 1000)"}
     result = bridge.call_tool("safe_math", args)
@@ -84,26 +71,12 @@ def test_mcp_safe_math_execution(bridge: MCPClientBridge) -> None:
     assert result["formatted"] == "0.5"
 
 
-def test_mcp_code_interpreter_execution(bridge: MCPClientBridge) -> None:
-    code = """
-import json
-
-revenues = input_data.get("revs", [])
-diff = revenues[1] - revenues[0]
-growth = (diff / revenues[0]) * 100.0
-
-print(json.dumps({"growth_pct": round(growth, 2)}))
-"""
-    args = {
-        "code": code,
-        "input_variables": {"revs": [120000.0, 150000.0]},
-        "timeout_seconds": 5.0,
-    }
-    result = bridge.call_tool("code_interpreter", args)
-
-    assert "parsed_result" in result
-    assert result["parsed_result"]["growth_pct"] == 25.0
-    assert result["exit_code"] == 0
+def test_mcp_does_not_expose_arbitrary_code_or_global_memory(
+    bridge: MCPClientBridge,
+) -> None:
+    names = {tool.name for tool in bridge.list_tools()}
+    assert "code_interpreter" not in names
+    assert "memory_retrieval" not in names
 
 
 def test_mcp_context_fusion_execution(bridge: MCPClientBridge) -> None:

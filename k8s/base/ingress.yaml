@@ -18,6 +18,6 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: financial-agent-api
+                name: financial-agent-ui
                 port:
                   number: 80

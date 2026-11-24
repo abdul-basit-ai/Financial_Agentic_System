@@ -34,9 +34,6 @@ CREATE TABLE IF NOT EXISTS episodic_memories (
 CREATE INDEX IF NOT EXISTS idx_episodic_session ON episodic_memories (session_id);
 CREATE INDEX IF NOT EXISTS idx_episodic_company ON episodic_memories (company_identifier);
 
--- NOTE: ivfflat index is NOT created here. With lists=50 it silently returns
--- zero rows on small tables (empty index clusters until populated). The
--- ensure_vector_index() helper builds it lazily once the table has enough rows.
 """
 
 
@@ -94,7 +91,7 @@ class EpisodicMemoryStore:
             "user": user or os.getenv("POSTGRES_USER", "postgres"),
             "password": password or os.getenv("POSTGRES_PASSWORD", "password"),
         }
-        # Imported here so importing this module does not pull torch
+
         from sentence_transformers import SentenceTransformer
 
         self.model = SentenceTransformer(model_name)

@@ -12,7 +12,8 @@ import requests
 def stream_sse_query(
     api_url: str,
     payload: dict[str, Any],
-    timeout_seconds: float = 60.0,
+    timeout_seconds: float = 180.0,
+    headers: dict[str, str] | None = None,
 ) -> Generator[dict[str, Any], None, None]:
     """Streams Server-Sent Events from the FastAPI backend.
 
@@ -24,7 +25,7 @@ def stream_sse_query(
         endpoint,
         json=payload,
         stream=True,
-        headers={"Accept": "text/event-stream"},
+        headers={"Accept": "text/event-stream", **(headers or {})},
         timeout=(5.0, timeout_seconds),
     ) as response:
         response.raise_for_status()
@@ -34,7 +35,7 @@ def stream_sse_query(
 
         for raw_line in response.iter_lines():
             if not raw_line:
-                # Dispatch event upon double newline
+
                 if current_data_lines:
                     raw_data = "\n".join(current_data_lines)
                     try:
@@ -54,8 +55,6 @@ def stream_sse_query(
             elif line.startswith("data:"):
                 current_data_lines.append(line.replace("data:", "", 1).strip())
 
-        # Be tolerant of servers that close immediately after the final data
-        # line instead of sending the blank line required by the SSE spec.
         if current_data_lines:
             raw_data = "\n".join(current_data_lines)
             try:

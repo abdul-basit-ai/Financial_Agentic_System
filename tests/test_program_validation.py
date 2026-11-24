@@ -1,13 +1,8 @@
-import importlib
-
-from agent.llm import LLMCallResult
 from agent.nodes.program_validation import (
     execute_grounded_expression,
     program_validation_flags,
     requires_derived_program,
 )
-from agent.nodes.synthesize_node import _verify_program_candidates
-from agent.state.schema import AgentStateV1
 
 
 def test_derived_question_detection() -> None:
@@ -39,22 +34,11 @@ def test_grounded_expression_executes_allowed_literals() -> None:
     assert result[0] == 0.2
 
 
-def test_verifier_selects_grounded_candidate(monkeypatch) -> None:
-    synthesize_module = importlib.import_module("agent.nodes.synthesize_node")
-    response = LLMCallResult(
-        content='{"selected_index": 1, "corrected_expression": null}',
-        model="test-verifier",
-        prompt_tokens=10,
-        completion_tokens=5,
-        cost_usd=0.01,
+def test_constants_are_not_evidence() -> None:
+    assert (
+        execute_grounded_expression("multiply(1000, 10)", "what is revenue?", {10})
+        is None
     )
-    monkeypatch.setattr(synthesize_module, "invoke_llm", lambda **_: response)
-    result = _verify_program_candidates(
-        AgentStateV1(input="what ratio was reported?"),
-        "Question: what ratio was reported?",
-        ["divide(10, 10)", "divide(20, 10)"],
-        {10.0, 20.0},
+    assert (
+        execute_grounded_expression("add(0xFF, 10)", "what is revenue?", {10}) is None
     )
-    assert result is not None
-    assert result[0] == 2.0
-    assert result[1] == "divide(20, 10)"

@@ -1,186 +1,90 @@
-"""Tests for the Postgres-backed persistent Merkle audit ledger.
-
-Verifies:
-1. Schema creation and durable writes.
-2. Chain continuity across a simulated process restart (fresh ledger instance
-   continues from the DB tail, no fork at genesis).
-3. Tamper detection on the DURABLE chain (verify_integrity(from_db=True)).
-4. Graceful, loud degradation to memory-only when Postgres is unreachable.
-"""
-
 from __future__ import annotations
 
-import os
+import json
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from agent.guardrails.audit import MerkleAuditLedger
 from agent.guardrails.persistent_audit import PersistentMerkleAuditLedger
 
 
-@pytest.fixture()
-def pg_ledger():
-    ledger = PersistentMerkleAuditLedger()
-    ok = ledger.init_schema()
-    if not ok:
-        pytest.skip("Postgres unavailable for persistent audit tests")
-    yield ledger
-    ledger.close()
-
-
-@pytest.fixture()
-def clean_table(pg_ledger):
-    with pg_ledger._get_connection().cursor() as cur:
-        cur.execute("DELETE FROM audit_ledger")
-    pg_ledger._get_connection().commit()
-    pg_ledger.entries = []
-    yield pg_ledger
-    with pg_ledger._get_connection().cursor() as cur:
-        cur.execute("DELETE FROM audit_ledger")
-    pg_ledger._get_connection().commit()
-
-
-def test_persistent_writes_are_durable(clean_table) -> None:
-    ledger = clean_table
-    ledger.record_transition(
-        trace_id="t1",
-        node_name="plan",
-        actor_id="system",
-        action_type="CREATE_PLAN",
-        state_payload={"step": 1},
-    )
-    ledger.record_transition(
-        trace_id="t1",
-        node_name="eval_risk",
-        actor_id="risk_engine",
-        action_type="EVALUATE_RISK",
-        state_payload={"risk": 0.2},
+def record(ledger, number, event_id=None):
+    return ledger.record_transition(
+        trace_id="trace",
+        node_name="node",
+        actor_id="reviewer",
+        action_type="REVIEW",
+        state_payload={"number": number},
+        metadata={"event_id": event_id} if event_id else {},
     )
 
-    # Fresh instance (simulated restart) reads the same durable chain
-    fresh = PersistentMerkleAuditLedger()
-    fresh.init_schema()
-    tail = fresh._load_tail()
-    assert tail is not None
-    assert tail.action_type == "EVALUATE_RISK"
-    assert tail.entry_hash == ledger.entries[-1].entry_hash
-    fresh.close()
+
+def test_chain_survives_restart_after_multiple_entries(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "")
+    path = str(tmp_path / "audit.sqlite3")
+    first = PersistentMerkleAuditLedger(path=path)
+    assert first.init_schema()
+    entries = [record(first, number) for number in range(5)]
+    restarted = PersistentMerkleAuditLedger(path=path)
+    assert restarted.init_schema()
+    next_entry = record(restarted, 5)
+    assert next_entry.entry_index == 5
+    assert next_entry.prev_hash == entries[-1].entry_hash
+    assert restarted.verify_integrity()[0]
 
 
-def test_chain_continues_across_restart_without_fork(clean_table) -> None:
-    first = clean_table
-    e1 = first.record_transition(
-        trace_id="t1",
-        node_name="a",
-        actor_id="s",
-        action_type="ACT_1",
-        state_payload={"n": 1},
-    )
+def test_parallel_writers_do_not_lose_audit_events(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "")
+    path = str(tmp_path / "audit.sqlite3")
+    assert PersistentMerkleAuditLedger(path=path).init_schema()
 
-    # Simulate restart: brand-new ledger instance with empty memory
-    second = PersistentMerkleAuditLedger()
-    second.init_schema()
-    e2 = second.record_transition(
-        trace_id="t1",
-        node_name="b",
-        actor_id="s",
-        action_type="ACT_2",
-        state_payload={"n": 2},
-    )
+    def write(number):
+        return record(PersistentMerkleAuditLedger(path=path), number).entry_index
 
-    # The restart entry must chain onto the DB tail, not genesis
-    assert e2.prev_hash == e1.entry_hash
-    assert e2.entry_index == e1.entry_index + 1
-
-    # Durable verification spans both processes' entries
-    ok, msg = second.verify_integrity(from_db=True)
-    assert ok is True
-    assert "Zero discrepancies" in msg
-    second.close()
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        indices = list(pool.map(write, range(18)))
+    assert sorted(indices) == list(range(18))
+    assert PersistentMerkleAuditLedger(path=path).verify_integrity()[0]
 
 
-def test_db_tampering_is_detected(clean_table) -> None:
-    ledger = clean_table
-    for i in range(3):
-        ledger.record_transition(
-            trace_id="t1",
-            node_name=f"n{i}",
-            actor_id="s",
-            action_type=f"ACT_{i}",
-            state_payload={"i": i},
+def test_replayed_interrupt_audit_is_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "")
+    path = str(tmp_path / "audit.sqlite3")
+    first = PersistentMerkleAuditLedger(path=path)
+    one = record(first, 1, "suspend:trace:0")
+    two = record(PersistentMerkleAuditLedger(path=path), 1, "suspend:trace:0")
+    assert one == two
+    third = record(first, 2)
+    assert third.entry_index == 1
+    assert first.verify_integrity()[0]
+
+
+def test_audit_metadata_tampering_is_detected(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "")
+    path = str(tmp_path / "audit.sqlite3")
+    ledger = PersistentMerkleAuditLedger(path=path)
+    record(ledger, 1, "event-1")
+    with sqlite3.connect(path) as connection:
+        payload = json.loads(
+            connection.execute(
+                "SELECT payload FROM audit_events WHERE entry_index=0"
+            ).fetchone()[0]
         )
-
-    ok, _ = ledger.verify_integrity(from_db=True)
-    assert ok is True
-
-    # Tamper DIRECTLY in the database (simulates DB-level edit)
-    with ledger._get_connection().cursor() as cur:
-        cur.execute(
-            "UPDATE audit_ledger SET actor_id = 'attacker' WHERE entry_index = 1"
+        payload["metadata"]["event_id"] = "forged"
+        connection.execute(
+            "UPDATE audit_events SET payload=? WHERE entry_index=0",
+            (json.dumps(payload),),
         )
-    ledger._get_connection().commit()
-
-    ok_tampered, msg = ledger.verify_integrity(from_db=True)
-    assert ok_tampered is False
-    assert "Tampered" in msg or "recomputation" in msg
-
-    # Restore for fixture cleanup
-    with ledger._get_connection().cursor() as cur:
-        cur.execute("DELETE FROM audit_ledger WHERE entry_index >= 1")
-        cur.execute(
-            "INSERT INTO audit_ledger (entry_index, timestamp_utc, trace_id, node_name,"
-            " actor_id, action_type, state_hash, prev_hash, entry_hash, metadata)"
-            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (
-                ledger.entries[1].entry_index,
-                ledger.entries[1].timestamp_utc,
-                ledger.entries[1].trace_id,
-                ledger.entries[1].node_name,
-                ledger.entries[1].actor_id,
-                ledger.entries[1].action_type,
-                ledger.entries[1].state_hash,
-                ledger.entries[1].prev_hash,
-                ledger.entries[1].entry_hash,
-                "{}",
-            ),
-        )
-    ledger._get_connection().commit()
+    assert ledger.verify_integrity()[0] is False
 
 
-def test_degraded_mode_is_memory_only_and_loud(clean_table, capsys) -> None:
-    # Point at an unreachable server -> init_schema must fail OPEN with a warning
-    degraded = PersistentMerkleAuditLedger(
-        host="localhost",
-        port=9999,
-        dbname="financial_agent",
-        user="postgres",
-        password="password",
-    )
-    ok = degraded.init_schema()
-    assert ok is False
-    captured = capsys.readouterr()
-    assert "MEMORY-ONLY" in captured.out
-
-    # Recording still works in-memory so agent execution is not blocked
-    entry = degraded.record_transition(
-        trace_id="t1",
-        node_name="a",
-        actor_id="s",
-        action_type="ACT",
-        state_payload={"x": 1},
-    )
-    assert entry.entry_index == 0
-    ok_mem, _ = degraded.verify_integrity()
-    assert ok_mem is True
-
-
-def test_hitl_nodes_use_persistent_ledger() -> None:
-    """The graph's AUDIT_LEDGER must be the persistent implementation."""
-    if os.getenv("FINAGENT_INTEGRATION_TESTS", "").strip() != "1":
-        pytest.skip("Persistent ledger requires Postgres (offline test mode)")
-
-    from agent.nodes.hitl_nodes import AUDIT_LEDGER
-
-    assert isinstance(AUDIT_LEDGER, PersistentMerkleAuditLedger)
-    # And it must be a strict subtype of the base contract
-    assert isinstance(AUDIT_LEDGER, MerkleAuditLedger)
+def test_audit_unavailable_fails_without_memory_only_success(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "")
+    blocker = tmp_path / "blocker"
+    blocker.write_text("file")
+    ledger = PersistentMerkleAuditLedger(path=str(blocker / "audit.sqlite3"))
+    assert ledger.init_schema() is False
+    with pytest.raises(RuntimeError, match="unavailable"):
+        record(ledger, 1)
+    assert ledger.entries == []

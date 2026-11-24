@@ -1,22 +1,18 @@
-"""FastAPI routes for financial agent querying, streaming, and governance."""
-
 from __future__ import annotations
 
 import asyncio
-import logging
+import os
 import time
 import uuid
 from datetime import UTC, datetime
-from typing import Any
+from typing import Annotated, Any, cast
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field
 
-try:
-    from langgraph.types import Command
-except ImportError:  # pragma: no cover
-    Command = None  # type: ignore[assignment,misc]
-
+from agent.documents.service import DocumentService
+from agent.server.auth import Principal, auth_mode, require_principal, supabase_request
 from agent.server.schemas import (
     ApprovalItem,
     ApprovalListResponse,
@@ -24,350 +20,500 @@ from agent.server.schemas import (
     HITLApprovalRequest,
     JobStatusResponse,
     QueryRequest,
+    SSEEvent,
     ThreadStateResponse,
 )
-from agent.server.streaming import stream_agent_events
-from agent.state.schema import AgentStateV1
+from agent.server.store import AdmissionLimitError, RecordStore, Transaction
 
-logger = logging.getLogger(__name__)
-
-router = APIRouter(prefix="/api/v1", tags=["Financial Reasoning Agent"])
-
-# In-memory repositories for tracking jobs and active thread identifiers
-JOB_STORE: dict[str, dict[str, Any]] = {}
-ACTIVE_THREADS: dict[str, dict[str, Any]] = {}
+router = APIRouter(prefix="/api/v1")
+Identity = Annotated[Principal, Depends(require_principal)]
 
 
-async def _execute_background_job(
-    agent: Any,
-    job_id: str,
-    initial_state: AgentStateV1,
-    config: dict[str, Any],
-) -> None:
-    """Asynchronous background execution worker."""
-    JOB_STORE[job_id]["status"] = "RUNNING"
-    JOB_STORE[job_id]["updated_at"] = datetime.now(UTC).isoformat()
-    start_time = time.perf_counter()
+class LoginRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=1, max_length=1024)
 
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(min_length=1, max_length=8192)
+
+
+def store_for(request: Request) -> RecordStore:
+    return cast(RecordStore, request.app.state.store)
+
+
+def documents_for(request: Request) -> DocumentService:
+    return cast(DocumentService, request.app.state.documents)
+
+
+def _admit(tx: Transaction) -> None:
     try:
-        final_state = await asyncio.to_thread(
-            agent.invoke,
-            initial_state.model_dump(),
-            config=config,
-        )
-        duration_ms = (time.perf_counter() - start_time) * 1000.0
-
-        curr_state = agent.get_state(config)
-        is_paused = bool(curr_state and curr_state.next)
-
-        JOB_STORE[job_id].update(
-            {
-                "status": "SUSPENDED_HITL" if is_paused else "COMPLETED",
-                "updated_at": datetime.now(UTC).isoformat(),
-                "result": final_state,
-                "execution_time_ms": round(duration_ms, 2),
-            }
-        )
-    except Exception as exc:
-        duration_ms = (time.perf_counter() - start_time) * 1000.0
-        JOB_STORE[job_id].update(
-            {
-                "status": "FAILED",
-                "updated_at": datetime.now(UTC).isoformat(),
-                "error": f"{type(exc).__name__}: {str(exc)}",
-                "execution_time_ms": round(duration_ms, 2),
-            }
-        )
+        tx.admit()
+    except AdmissionLimitError as exc:
+        raise HTTPException(429, str(exc), headers={"Retry-After": "60"}) from exc
 
 
-# =====================================================================
-# 1. Real-Time Server-Sent Events (SSE) Endpoint
-# =====================================================================
-
-
-@router.post(
-    "/query/stream",
-    summary="Real-time Server-Sent Events (SSE) reasoning stream",
-    response_class=StreamingResponse,
-)
-async def query_stream_endpoint(
-    request: Request, body: QueryRequest
-) -> StreamingResponse:
-    agent = request.app.state.agent
-    initial_state = AgentStateV1(
-        input=body.query,
-        company_identifier=body.company_identifier,
-    )
-    config = {
-        "configurable": {
-            "thread_id": body.thread_id,
-            "tenant_id": body.tenant_id,
-        }
+@router.get("/config")
+def public_config() -> dict[str, Any]:
+    return {
+        "auth_mode": auth_mode(),
+        "supabase_url": os.getenv("SUPABASE_URL", ""),
+        "supabase_publishable_key": os.getenv("SUPABASE_PUBLISHABLE_KEY", ""),
+        "max_upload_bytes": int(os.getenv("MAX_UPLOAD_BYTES", str(20 * 1024 * 1024))),
+        "features": {"documents": True},
     }
 
-    # Register active thread for state and approval inspection
-    ACTIVE_THREADS[body.thread_id] = {
+
+def _exchange(grant: str, payload: dict[str, str]) -> dict[str, Any]:
+    if auth_mode() != "supabase":
+        raise HTTPException(400, "Use your worker access token.")
+    response = supabase_request(
+        "POST", f"/auth/v1/token?grant_type={grant}", json=payload
+    )
+    if response.status_code != 200:
+        raise HTTPException(
+            401 if response.status_code in {400, 401, 403, 422} else 503,
+            "Sign-in failed. Check your credentials and try again.",
+        )
+    try:
+        data = response.json()
+        if (
+            not isinstance(data, dict)
+            or not isinstance(data.get("access_token"), str)
+            or not data["access_token"]
+        ):
+            raise ValueError("Invalid token response")
+    except ValueError as exc:
+        raise HTTPException(503, "Authentication is temporarily unavailable.") from exc
+    return {
+        key: data[key]
+        for key in ("access_token", "refresh_token", "expires_in", "user")
+        if key in data
+    }
+
+
+@router.post("/auth/login")
+def login(body: LoginRequest) -> dict[str, Any]:
+    return _exchange("password", body.model_dump())
+
+
+@router.post("/auth/refresh")
+def refresh(body: RefreshRequest) -> dict[str, Any]:
+    return _exchange("refresh_token", body.model_dump())
+
+
+def _submit(
+    request: Request, body: QueryRequest, identity: Principal
+) -> dict[str, Any]:
+    store = store_for(request)
+    now = datetime.now(UTC).isoformat()
+    thread: dict[str, Any] = {
+        "thread_id": body.thread_id,
         "input_query": body.query,
         "company_identifier": body.company_identifier,
-        "created_at": datetime.now(UTC).isoformat(),
+        "document_ids": body.document_ids,
+        "created_at": now,
+        "is_paused": False,
+        "state_values": {},
+        "next_nodes": [],
     }
+    job: dict[str, Any] = {
+        "job_id": f"job_{uuid.uuid4().hex}",
+        "thread_id": body.thread_id,
+        "kind": "query",
+        "status": "QUEUED",
+        "created_at": now,
+        "updated_at": now,
+        "query_payload": body.model_dump(),
+        "result": None,
+        "error": None,
+    }
+    with store.transaction(identity.user_id) as tx:
+        if tx.get("threads", body.thread_id):
+            raise HTTPException(409, "This analysis ID has already been used.")
+        for document_id in body.document_ids:
+            if (tx.get("documents", document_id) or {}).get("status") != "ready":
+                raise HTTPException(
+                    404, "Every selected report must be available and ready."
+                )
+        _admit(tx)
+        tx.put("threads", body.thread_id, thread)
+        tx.put("jobs", job["job_id"], job)
+    return job
+
+
+@router.post("/query/async", status_code=202, response_model=AsyncJobResponse)
+def query_async_endpoint(
+    request: Request, body: QueryRequest, identity: Identity
+) -> AsyncJobResponse:
+    job = _submit(request, body, identity)
+    return AsyncJobResponse(
+        job_id=job["job_id"],
+        thread_id=body.thread_id,
+        status="QUEUED",
+        created_at=job["created_at"],
+        poll_url=f"/api/v1/jobs/{job['job_id']}",
+    )
+
+
+@router.post("/query/stream")
+async def query_stream_endpoint(
+    request: Request, body: QueryRequest, identity: Identity
+) -> StreamingResponse:
+    job = await asyncio.to_thread(_submit, request, body, identity)
+
+    async def events():
+        yield SSEEvent(
+            event="lifecycle",
+            data={
+                "stage": "INITIATED",
+                "thread_id": body.thread_id,
+                "job_id": job["job_id"],
+            },
+        ).to_sse_packet()
+        yield SSEEvent(
+            event="node_update",
+            data={
+                "node": "retrieve_evidence",
+                "latest_log": "Searching selected sources and validating cited inputs.",
+            },
+        ).to_sse_packet()
+        start = time.monotonic()
+        deadline = float(os.getenv("QUERY_STREAM_TIMEOUT", "180"))
+        while time.monotonic() - start < deadline:
+            if await request.is_disconnected():
+                return
+            current = await asyncio.to_thread(
+                store_for(request).get, "jobs", job["job_id"], identity.user_id
+            )
+            if current and current["status"] in {
+                "COMPLETED",
+                "SUSPENDED_HITL",
+                "FAILED",
+                "CANCELLED",
+            }:
+                if current["status"] == "FAILED":
+                    yield SSEEvent(
+                        event="error",
+                        data={
+                            "message": current.get("error", "Analysis failed."),
+                            "job_id": job["job_id"],
+                        },
+                    ).to_sse_packet()
+                elif current["status"] == "SUSPENDED_HITL":
+                    thread = (
+                        store_for(request).get(
+                            "threads", body.thread_id, identity.user_id
+                        )
+                        or {}
+                    )
+                    yield SSEEvent(
+                        event="interrupt",
+                        data={
+                            "thread_id": body.thread_id,
+                            "paused_at_nodes": thread.get("next_nodes", []),
+                        },
+                    ).to_sse_packet()
+                else:
+                    result = current.get("result") or {}
+                    yield SSEEvent(
+                        event="final_answer",
+                        data={
+                            "thread_id": body.thread_id,
+                            **{
+                                k: result.get(k)
+                                for k in (
+                                    "final_answer",
+                                    "citations",
+                                    "answer_status",
+                                    "calculation",
+                                    "llm_usage",
+                                )
+                            },
+                        },
+                    ).to_sse_packet()
+                    yield SSEEvent(
+                        event="complete",
+                        data={"status": "FINISHED", "thread_id": body.thread_id},
+                    ).to_sse_packet()
+                return
+            yield ": keep-alive\n\n"
+            await asyncio.sleep(0.25)
+        yield SSEEvent(
+            event="error",
+            data={
+                "message": "Analysis is still running. Use the saved analysis ID to recover the result.",
+                "job_id": job["job_id"],
+                "thread_id": body.thread_id,
+            },
+        ).to_sse_packet()
 
     return StreamingResponse(
-        stream_agent_events(agent, initial_state, config),
+        events(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
             "X-Thread-Id": body.thread_id,
         },
     )
 
 
-# =====================================================================
-# 2. Asynchronous Job & Polling Endpoints
-# =====================================================================
+@router.get("/jobs/{job_id}", response_model=JobStatusResponse)
+def get_job_status_endpoint(
+    request: Request, job_id: str, identity: Identity
+) -> JobStatusResponse:
+    job = store_for(request).get("jobs", job_id, identity.user_id)
+    if job is None:
+        raise HTTPException(404, "Analysis not found.")
+    return JobStatusResponse(**job)
 
 
-@router.post(
-    "/query/async",
-    response_model=AsyncJobResponse,
-    status_code=status.HTTP_202_ACCEPTED,
-    summary="Submit query for asynchronous decoupled execution",
-)
-async def query_async_endpoint(
-    request: Request,
-    body: QueryRequest,
-    background_tasks: BackgroundTasks,
-) -> AsyncJobResponse:
-    agent = request.app.state.agent
-    job_id = f"job_{uuid.uuid4().hex[:12]}"
-    now_str = datetime.now(UTC).isoformat()
-
-    initial_state = AgentStateV1(
-        input=body.query,
-        company_identifier=body.company_identifier,
-    )
-    config = {
-        "configurable": {
-            "thread_id": body.thread_id,
-            "tenant_id": body.tenant_id,
-        }
-    }
-
-    ACTIVE_THREADS[body.thread_id] = {
-        "input_query": body.query,
-        "company_identifier": body.company_identifier,
-        "created_at": now_str,
-    }
-
-    JOB_STORE[job_id] = {
-        "job_id": job_id,
-        "thread_id": body.thread_id,
-        "status": "QUEUED",
-        "created_at": now_str,
-        "updated_at": now_str,
-        "result": None,
-        "error": None,
-        "execution_time_ms": None,
-    }
-
-    background_tasks.add_task(
-        _execute_background_job,
-        agent=agent,
-        job_id=job_id,
-        initial_state=initial_state,
-        config=config,
-    )
-
-    return AsyncJobResponse(
-        job_id=job_id,
-        thread_id=body.thread_id,
-        status="QUEUED",
-        created_at=now_str,
-        poll_url=f"/api/v1/jobs/{job_id}",
-    )
-
-
-@router.get(
-    "/jobs/{job_id}",
-    response_model=JobStatusResponse,
-    summary="Poll status of an asynchronous job",
-)
-async def get_job_status_endpoint(job_id: str) -> JobStatusResponse:
-    if job_id not in JOB_STORE:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Job '{job_id}' not found.",
-        )
-    return JobStatusResponse(**JOB_STORE[job_id])
-
-
-# =====================================================================
-# 3. Governance: HITL Approvals Queue & Resumption Endpoints
-# =====================================================================
-
-
-@router.get(
-    "/approvals",
-    response_model=ApprovalListResponse,
-    summary="List all execution threads currently paused awaiting HITL review",
-)
-async def list_approvals_endpoint(request: Request) -> ApprovalListResponse:
-    agent = request.app.state.agent
-    approval_items: list[ApprovalItem] = []
-    finished_threads: list[str] = []
-
-    for thread_id, meta in list(ACTIVE_THREADS.items()):
-        config = {"configurable": {"thread_id": thread_id}}
-        try:
-            snapshot = agent.get_state(config)
-        except Exception:
-            continue
-
-        if not snapshot or not snapshot.values:
-            # No checkpointed state (e.g. Redis flushed) — registry entry is
-            # stale; drop it so the queue cannot grow without bound.
-            finished_threads.append(thread_id)
-            continue
-
-        is_paused = bool(snapshot.next)
-        hitl_status = snapshot.values.get("hitl_status", "NONE")
-
-        # Select threads paused on interrupts or marked with PENDING HITL status
-        if is_paused or hitl_status == "PENDING":
-            scratchpad = snapshot.values.get("scratchpad", [])
-            trigger_reasons = [
-                line for line in scratchpad if line.strip().startswith("• [")
-            ]
-
-            approval_items.append(
-                ApprovalItem(
-                    thread_id=thread_id,
-                    trace_id=snapshot.values.get("trace_id", "unknown"),
-                    input_query=meta.get(
-                        "input_query", snapshot.values.get("input", "")
-                    ),
-                    company_identifier=meta.get("company_identifier"),
-                    hitl_status=hitl_status,
-                    paused_nodes=list(snapshot.next) if snapshot.next else [],
-                    trigger_reasons=trigger_reasons,
-                    pending_tool_calls=snapshot.values.get("tool_calls", []),
-                    scratchpad_summary=scratchpad[-5:] if scratchpad else [],
-                    created_at=meta.get("created_at", datetime.now(UTC).isoformat()),
-                )
+@router.get("/approvals", response_model=ApprovalListResponse)
+def list_approvals_endpoint(
+    request: Request, identity: Identity
+) -> ApprovalListResponse:
+    items = []
+    for thread in store_for(request).list(
+        "threads", identity.user_id, limit=None, paused_only=True
+    ):
+        values = thread.get("state_values", {})
+        scratchpad = values.get("scratchpad", [])
+        items.append(
+            ApprovalItem(
+                thread_id=thread["thread_id"],
+                trace_id=values.get("trace_id", "unknown"),
+                input_query=thread.get("input_query", ""),
+                company_identifier=thread.get("company_identifier"),
+                hitl_status=values.get("hitl_status", "PENDING"),
+                paused_nodes=thread.get("next_nodes", []),
+                pending_tool_calls=values.get("tool_calls", []),
+                trigger_reasons=[line for line in scratchpad if "[" in line][-5:],
+                scratchpad_summary=scratchpad[-5:],
+                created_at=thread["created_at"],
             )
-        elif snapshot.values.get("final_answer") or snapshot.values.get("is_terminal"):
-            # Terminal thread (resumed/completed/rejected) — no longer a
-            # pending approval; prune from the registry (checkpoint history
-            # stays in Redis independently). Mid-run threads have neither
-            # flag set and are kept: pruning them here would race an active
-            # stream whose interrupt hasn't been checkpointed yet.
-            finished_threads.append(thread_id)
-
-    for thread_id in finished_threads:
-        ACTIVE_THREADS.pop(thread_id, None)
-
-    return ApprovalListResponse(
-        total_pending=len(approval_items),
-        items=approval_items,
-    )
-
-
-@router.get(
-    "/threads/{thread_id}/state",
-    response_model=ThreadStateResponse,
-    summary="Inspect state and check for active HITL suspensions",
-)
-async def get_thread_state_endpoint(
-    request: Request, thread_id: str
-) -> ThreadStateResponse:
-    agent = request.app.state.agent
-    config = {"configurable": {"thread_id": thread_id}}
-
-    snapshot = agent.get_state(config)
-    if not snapshot or not snapshot.values:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Thread '{thread_id}' has no recorded state.",
         )
+    return ApprovalListResponse(total_pending=len(items), items=items)
 
-    is_paused = bool(snapshot.next)
-    interrupt_payload = None
 
-    if hasattr(snapshot, "tasks") and snapshot.tasks:
-        for task in snapshot.tasks:
-            if hasattr(task, "interrupts") and task.interrupts:
-                interrupt_payload = [i.value for i in task.interrupts]
-
+@router.get("/threads/{thread_id}/state", response_model=ThreadStateResponse)
+def get_thread_state_endpoint(
+    request: Request, thread_id: str, identity: Identity
+) -> ThreadStateResponse:
+    thread = store_for(request).get("threads", thread_id, identity.user_id)
+    if thread is None:
+        raise HTTPException(404, "Analysis not found.")
+    values = thread.get("state_values", {})
     return ThreadStateResponse(
         thread_id=thread_id,
-        is_paused=is_paused,
-        next_nodes=list(snapshot.next),
-        hitl_status=snapshot.values.get("hitl_status", "NONE"),
-        state_values=snapshot.values,
-        interrupt_payload=interrupt_payload,
+        is_paused=thread.get("is_paused", False),
+        next_nodes=thread.get("next_nodes", []),
+        hitl_status=values.get("hitl_status", "NONE"),
+        state_values=values,
     )
 
 
-@router.post(
-    "/threads/{thread_id}/resume",
-    summary="Resume an interrupted thread with analyst approval or overrides",
-)
-async def resume_thread_endpoint(
-    request: Request,
-    thread_id: str,
-    body: HITLApprovalRequest,
-) -> dict[str, Any]:
-    agent = request.app.state.agent
-    config = {"configurable": {"thread_id": thread_id}}
-
-    snapshot = agent.get_state(config)
-    if not snapshot or not snapshot.next:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Thread '{thread_id}' is not in a paused or interruptible state.",
-        )
-
-    decision_payload = {
-        "action": body.action,
-        "analyst_id": body.analyst_id,
-        "feedback": body.feedback,
-        "overrides": body.overrides,
+@router.get("/threads")
+def list_threads_endpoint(request: Request, identity: Identity) -> dict[str, Any]:
+    records = store_for(request).list("threads", identity.user_id, limit=100)
+    fields = (
+        "thread_id",
+        "input_query",
+        "company_identifier",
+        "document_ids",
+        "created_at",
+        "updated_at",
+        "is_paused",
+    )
+    return {
+        "items": [{key: record.get(key) for key in fields} for record in records],
+        "total": len(records),
     }
 
-    # Map the UI-facing alias "OVERRIDE" to the graph's "EDIT" verb. Without
-    # this, an OVERRIDE submission fails closed to REJECT in hitl_gate.
-    if decision_payload["action"] == "OVERRIDE":
-        decision_payload["action"] = "EDIT"
-        # UI OVERRIDE without tool_calls structure would be dropped by the
-        # gate; pass overrides through untouched so the analyst's edits land.
 
-    try:
-        if Command is not None:
-            resume_cmd: Any = Command(resume=decision_payload)
-            resumed_output = await asyncio.to_thread(
-                agent.invoke, resume_cmd, config=config
-            )
-        else:
-            agent.update_state(config, {"hitl_status": body.action})
-            resumed_output = await asyncio.to_thread(agent.invoke, None, config=config)
-
-        return {
-            "thread_id": thread_id,
-            "status": "RESUMED",
-            "action_applied": body.action,
-            "final_answer": resumed_output.get("final_answer"),
-            "is_terminal": resumed_output.get("is_terminal", False),
-        }
-    except Exception:
-        logger.exception("Failed to resume thread %s", thread_id)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to resume the thread. Use the response trace ID for support.",
+def _queue_resume(
+    store: RecordStore, thread_id: str, body: HITLApprovalRequest, identity: Principal
+) -> str:
+    with store.transaction(identity.user_id) as tx:
+        thread = tx.get("threads", thread_id)
+        if not thread:
+            raise HTTPException(404, "Analysis not found.")
+        if not thread.get("is_paused"):
+            raise HTTPException(400, "This analysis is not awaiting review.")
+        review = str(
+            thread.get("review_id")
+            or thread.get("state_values", {}).get("iteration_count", 0)
         )
+        job_id = "resume_" + thread_id + "_" + review
+        previous = tx.get("jobs", job_id)
+        if previous and previous.get("status") != "FAILED":
+            raise HTTPException(409, "A decision for this review is already queued.")
+        _admit(tx)
+        now = datetime.now(UTC).isoformat()
+        decision = {
+            **body.model_dump(),
+            "action": "EDIT" if body.action == "OVERRIDE" else body.action,
+            "analyst_id": identity.user_id,
+        }
+        job = {
+            "job_id": job_id,
+            "thread_id": thread_id,
+            "kind": "resume",
+            "status": "QUEUED",
+            "created_at": now,
+            "updated_at": now,
+            "decision": decision,
+            "checkpoint_id": thread.get("checkpoint_id"),
+            "query_payload": {
+                "query": thread.get("input_query", ""),
+                "document_ids": [],
+            },
+        }
+        tx.put("jobs", job_id, job)
+        return job_id
 
 
-@router.get("/health", summary="Health check endpoint")
-async def health_check() -> dict[str, str]:
-    return {"status": "healthy", "service": "finagent-production-gateway"}
+@router.post("/threads/{thread_id}/resume")
+async def resume_thread_endpoint(
+    request: Request, thread_id: str, body: HITLApprovalRequest, identity: Identity
+) -> dict[str, Any]:
+    store = store_for(request)
+    job_id = await asyncio.to_thread(_queue_resume, store, thread_id, body, identity)
+    for _ in range(100):
+        current = await asyncio.to_thread(store.get, "jobs", job_id, identity.user_id)
+        if current and current["status"] in {"COMPLETED", "FAILED", "SUSPENDED_HITL"}:
+            if current["status"] == "FAILED":
+                raise HTTPException(500, current.get("error", "Resume failed."))
+            result = current.get("result") or {}
+            return {
+                "thread_id": thread_id,
+                "status": "RESUMED",
+                "action_applied": body.action,
+                **{
+                    key: result.get(key)
+                    for key in (
+                        "final_answer",
+                        "citations",
+                        "answer_status",
+                        "calculation",
+                        "is_terminal",
+                    )
+                },
+            }
+        await asyncio.sleep(0.2)
+    return {
+        "thread_id": thread_id,
+        "status": "QUEUED",
+        "job_id": job_id,
+        "is_terminal": False,
+    }
+
+
+@router.get("/documents")
+def list_documents(request: Request, identity: Identity) -> dict[str, Any]:
+    rows = store_for(request).list("documents", identity.user_id, limit=None)
+    return {
+        "items": [
+            {k: v for k, v in row.items() if k not in {"storage_key", "deletion_token"}}
+            for row in rows
+        ],
+        "total": len(rows),
+    }
+
+
+@router.post("/documents", status_code=202)
+async def upload_document(
+    request: Request,
+    identity: Identity,
+    file: UploadFile = File(...),
+    company_identifier: str | None = Form(None),
+) -> dict[str, Any]:
+    cap = int(os.getenv("MAX_UPLOAD_BYTES", str(20 * 1024 * 1024)))
+    content = await file.read(cap + 1)
+    await file.close()
+    if len(content) > cap:
+        raise HTTPException(413, "The report exceeds the upload size limit.")
+    try:
+        record = await asyncio.to_thread(
+            documents_for(request).create,
+            identity.user_id,
+            file.filename or "report.pdf",
+            content,
+            company_identifier,
+        )
+    except AdmissionLimitError as exc:
+        raise HTTPException(429, str(exc), headers={"Retry-After": "60"}) from exc
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {
+        k: v for k, v in record.items() if k not in {"storage_key", "deletion_token"}
+    }
+
+
+def _document(
+    request: Request, document_id: str, identity: Principal
+) -> dict[str, Any]:
+    row = store_for(request).get("documents", document_id, identity.user_id)
+    if row is None:
+        raise HTTPException(404, "Report not found.")
+    return row
+
+
+@router.get("/documents/{document_id}")
+def get_document(
+    request: Request, document_id: str, identity: Identity
+) -> dict[str, Any]:
+    return {
+        k: v
+        for k, v in _document(request, document_id, identity).items()
+        if k not in {"storage_key", "deletion_token"}
+    }
+
+
+@router.get("/documents/{document_id}/evidence")
+def document_evidence(
+    request: Request, document_id: str, identity: Identity
+) -> dict[str, Any]:
+    _document(request, document_id, identity)
+    try:
+        items = documents_for(request).evidence(identity.user_id, [document_id])
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"items": [item.citation() for item in items], "total": len(items)}
+
+
+@router.get("/documents/{document_id}/download")
+def download_document(
+    request: Request, document_id: str, identity: Identity
+) -> Response:
+    record = _document(request, document_id, identity)
+    if record.get("status") == "deleting":
+        raise HTTPException(409, "Report deletion is in progress.")
+    return Response(
+        documents_for(request).storage.read(record["storage_key"]),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'attachment; filename="report.pdf"',
+            "Cache-Control": "private, no-store",
+        },
+    )
+
+
+@router.delete("/documents/{document_id}", status_code=204)
+def delete_document(request: Request, document_id: str, identity: Identity) -> Response:
+    record = _document(request, document_id, identity)
+    if record.get("status") in {"queued", "processing"}:
+        raise HTTPException(
+            409, "Wait for report processing to finish before deleting it."
+        )
+    try:
+        documents_for(request).delete(identity.user_id, document_id)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return Response(status_code=204)
+
+
+@router.get("/health")
+def health_check() -> dict[str, str]:
+    return {"status": "healthy", "service": "financial-document-worker"}
