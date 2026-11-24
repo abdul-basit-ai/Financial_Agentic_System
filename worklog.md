@@ -6,6 +6,8 @@ Fix the audited defects, implement the agreed Supabase plus Python financial doc
 
 ## Current instructions
 
+- New UX refinement: user finds text too small and requests larger typography, left-panel organization and self-verified visual/usability improvements. Root owns app layout/tests/browser QA; Luna owns ui/styles.css only.
+
 - User explicitly requests committing and pushing all current project changes to the existing GitHub remote. Include project documentation and existing deletions; exclude credentials, runtime data, temporary QA files and the empty Windows nul artifact.
 - User explicitly requests subagent research and a comprehensive issue review.
 - User now explicitly authorizes fixing all audited issues and improving the UI with subagents. Audit-only restrictions are superseded for repository implementation.
@@ -30,6 +32,9 @@ Fix the audited defects, implement the agreed Supabase plus Python financial doc
 - UI peer completed its initial UI tests and additionally owns pyproject/config/env/Docker/Compose/CI/K8s/legacy infra/README packaging work. Root generates lockfiles after handback and does not overlap those files.
 
 ## Unfinished work
+
+- [x] Move report management and saved research to the sidebar; give questions/answers the main workspace.
+- [x] Increase typography/control sizes and verify the new layout visually plus relevant UI regression checks.
 
 - [ ] Configure and validate hosted Supabase Auth, private Storage and Postgres with a deployed Python worker; no remote infrastructure was changed.
 - [ ] Run live candidate benchmarks and ablations against refreshed immutable indexes before selecting production models or claiming SOTA accuracy.
@@ -96,3 +101,9 @@ Fix the audited defects, implement the agreed Supabase plus Python financial doc
 - User requested a localhost preview. Restarted the local API on 127.0.0.1:8011 and Ledger UI on 127.0.0.1:8511 using the isolated QA data and development token. Hosted model calls remain disabled for this preview; deterministic cited arithmetic is available. Services are left running for user testing.
 - Commit hooks exposed a stale-tool mismatch: isolated Black/Ruff/mypy versions differed from uv.lock and the mypy hook lacked runtime dependency types. Replaced hooks with local uv-run checks using locked development dependencies, one Black worker on Windows, Ruff import ordering and a full application mypy run. The first commit was correctly rejected before creating a commit; no check was bypassed.
 - Commit validation completed successfully with locked Black, Ruff and full application mypy hooks. All 160 project changes are committed on main and ready for the explicitly requested GitHub push; local secrets, runtime data and temporary artifacts remain excluded.
+- Prior GitHub push completed: main at 4b713a7, origin matched and worktree was clean. New UI readability iteration is now authorized; no additional push assumed until requested.
+- Readability iteration complete: root moved report selection, report library, uploads and saved research into the left sidebar; tucked credentials/connection and optional company filters away; separated Research/Review into full-width tabs. Replaced the prefilled unrelated benchmark question with an example placeholder and replaced visible technical thread IDs with the actual question.
+- Luna rewrote ui/styles.css; root integrated and corrected current Streamlit DOM selectors. Browser-computed question/button text is 18px, labels/expanders 17px, supporting captions 15.2px; desktop sidebar 360px, primary controls approximately 49px high. Corrected nested paragraph overrides, green selection/tab colors, source/analysis spacing and narrow-screen toolbar overlap.
+- Verified actual desktop, 768px tablet and 390px phone layouts with isolated Chrome screenshots. Phone document width equals viewport width (390px), sidebar opens to 343px and collapses correctly; answer/citation cards stay readable. Sidebar upload, report selection, live local cited-answer calculation (33.3333333333 percent), saved answer recovery and Review navigation pass. Screenshots remain ignored in tmp/qa. No new provider or deployment calls.
+- Relevant UI/SSE/end-to-end suite: 15 passed. Ruff, UI mypy, formatting, Python/CSS no-comment checks and diff whitespace checks pass. Existing tests adjusted for an empty initial question and sentence-case status captions. API 8011 and UI 8511 remain running for user testing; updated source is local and has not been pushed again.
+- User explicitly requested pushing the completed readability iteration. Preparing the five reviewed UI/test/worklog changes for main; prior browser and regression verification remains applicable. Secrets and temporary QA outputs remain ignored.

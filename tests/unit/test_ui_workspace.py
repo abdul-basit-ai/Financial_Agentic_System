@@ -178,6 +178,7 @@ def test_insufficient_answer_status_is_presented_as_abstention():
     ):
         app = AppTest.from_file(str(APP), default_timeout=15).run()
         app.text_input(key="token_input").set_value("test-user-token").run()
+        app.text_area(key="query_input").set_value("What was revenue in 2021?")
         app.button(key="FormSubmitter:query_form-Run analysis").click().run()
 
     assert any(

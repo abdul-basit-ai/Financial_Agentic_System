@@ -44,8 +44,8 @@ def test_ready_documents_are_selectable_and_nonready_documents_are_not():
         selector.set_value(["doc-ready"]).run()
         assert app.session_state.selected_document_ids == ["doc-ready"]
         assert any("annual-2025.pdf" in item.value for item in app.markdown)
-        assert any("processing" in item.value for item in app.markdown)
-        app.text_area(key="query_input").set_value("What changed?").run()
+        assert any("processing" in item.value.lower() for item in app.caption)
+        app.text_area(key="query_input").set_value("What changed?")
         with patch(
             "ui.sse_client.stream_sse_query",
             return_value=iter([{"event": "complete", "data": {}}]),

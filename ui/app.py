@@ -31,9 +31,6 @@ st.markdown(f"<style>{CSS}</style>", unsafe_allow_html=True)
 
 DEFAULT_API_URL = os.getenv("API_URL") or "http://127.0.0.1:8000"
 ALLOW_API_OVERRIDE = os.getenv("FINAGENT_ALLOW_API_OVERRIDE", "0").strip() == "1"
-DEFAULT_QUERY = (
-    "What is the percent change in annual long-term debt maturities from 2016 to 2017?"
-)
 
 
 def _api_url() -> str:
@@ -132,7 +129,7 @@ def _render_citations(citations: Any) -> None:
 def _render_analysis(record: dict[str, Any]) -> None:
     answer = record.get("final_answer")
     if answer:
-        st.markdown("#### Answer")
+        st.markdown("### Answer")
         st.markdown(str(answer))
         status = str(record.get("answer_status") or "").lower()
         if status in {"abstain", "abstained", "insufficient", "insufficient_evidence"}:
@@ -143,7 +140,7 @@ def _render_analysis(record: dict[str, Any]) -> None:
         if calculation:
             with st.expander("Calculation details"):
                 st.code(str(calculation), language="text")
-        st.markdown("#### Filing evidence")
+        st.markdown("### Filing evidence")
         _render_citations(record.get("citations"))
     elif record.get("paused"):
         st.info(
@@ -184,15 +181,13 @@ if "workspace_config" not in st.session_state:
 
 with st.sidebar:
     st.markdown(
-        '<div class="sidebar-brand">◈ &nbsp; ledger<span>FINANCIAL RESEARCH</span></div>',
+        '<div class="sidebar-brand">&#9672; &nbsp; ledger<span>FINANCIAL RESEARCH</span></div>',
         unsafe_allow_html=True,
     )
-    st.markdown(
-        '<div class="sidebar-active">▦ &nbsp; Research workspace</div>',
-        unsafe_allow_html=True,
-    )
-    st.caption("A private workspace for filing-backed analysis.")
-    with st.expander("Connection settings"):
+    library_panel = st.container()
+    history_panel = st.container()
+    with st.expander("Account & connection"):
+        account_controls = st.container()
         if ALLOW_API_OVERRIDE:
             st.text_input("Backend API URL", key="api_base_url")
         else:
@@ -200,23 +195,23 @@ with st.sidebar:
         if st.button("Reload connection", use_container_width=True):
             st.session_state.workspace_config = None
             st.rerun()
-    if st.button(
-        "Sign out",
-        use_container_width=True,
-        disabled=not bool(st.session_state.get("access_token")),
-    ):
-        for key in (
-            "access_token",
-            "refresh_token",
-            "user",
-            "selected_document_ids",
-            "token_input",
-            "analyses",
-            "last_analysis",
-            "workspace_identity",
+        if st.button(
+            "Sign out",
+            use_container_width=True,
+            disabled=not bool(st.session_state.get("access_token")),
         ):
-            st.session_state.pop(key, None)
-        st.rerun()
+            for key in (
+                "access_token",
+                "refresh_token",
+                "user",
+                "selected_document_ids",
+                "token_input",
+                "analyses",
+                "last_analysis",
+                "workspace_identity",
+            ):
+                st.session_state.pop(key, None)
+            st.rerun()
 
 config = st.session_state.workspace_config
 if config is None:
@@ -260,7 +255,7 @@ if auth_mode == "supabase" and not st.session_state.get("access_token"):
 
 if auth_mode != "supabase":
     env_token = os.getenv("FINAGENT_API_TOKEN", "")
-    with st.sidebar:
+    with account_controls:
         st.text_input("Workspace access token", type="password", key="token_input")
     st.session_state.access_token = st.session_state.get("token_input") or env_token
 
@@ -275,11 +270,11 @@ if st.session_state.get("workspace_identity") != workspace_identity:
     st.session_state.workspace_identity = workspace_identity
 
 st.markdown(
-    '<div class="topbar"><span>WORKSPACE / FINANCIAL RESEARCH</span>'
+    '<div class="topbar"><span>YOUR RESEARCH WORKSPACE</span>'
     f'<span class="connection">{html.escape(str((st.session_state.get("user") or {}).get("email") or "Private workspace"))}</span></div>'
     '<div class="hero"><div class="eyebrow">THE RESEARCH DESK</div>'
     "<h1>Clarity behind the numbers.</h1>"
-    "<p>Choose your filings, ask a question, and inspect the page-level evidence behind every answer.</p></div>",
+    "<p>Ask about your reports. Check every answer against the source.</p></div>",
     unsafe_allow_html=True,
 )
 
@@ -304,63 +299,10 @@ if not backend_error and st.session_state.get("access_token"):
     except Exception as exc:
         documents_error = str(exc)
 
-research, review = st.columns([2.2, 1], gap="large")
-
-with research:
-    st.markdown("### Your filing library")
+with library_panel:
+    st.markdown("### Your reports")
     if st.button("Refresh reports", key="refresh_documents", use_container_width=False):
         st.rerun()
-    st.caption(
-        "Upload annual reports and SEC filings in PDF format. Documents are private to your account."
-    )
-    max_upload_bytes = int(config.get("max_upload_bytes") or 25 * 1024 * 1024)
-    uploaded = st.file_uploader(
-        "Add a filing",
-        type=["pdf"],
-        accept_multiple_files=False,
-        key="report_upload",
-        max_upload_size=max(1, math.ceil(max_upload_bytes / (1024 * 1024))),
-    )
-    company_for_upload = st.text_input(
-        "Company identifier (optional)",
-        key="upload_company",
-        placeholder="Ticker or company name",
-    )
-    if uploaded is not None:
-        st.caption(
-            f"Selected file: {uploaded.name} · {uploaded.size / (1024 * 1024):.1f} MiB · Maximum {max_upload_bytes / (1024 * 1024):.1f} MiB"
-        )
-        too_large = uploaded.size > max_upload_bytes
-        if too_large:
-            st.warning("This PDF exceeds the workspace upload limit.")
-        if st.button(
-            "Upload report",
-            type="primary",
-            key="upload_document",
-            disabled=too_large or not bool(st.session_state.get("access_token")),
-        ):
-            try:
-                upload_response = _request(
-                    "POST",
-                    "/api/v1/documents",
-                    files={
-                        "file": (uploaded.name, uploaded.getvalue(), "application/pdf")
-                    },
-                    data=(
-                        {"company_identifier": company_for_upload.strip()}
-                        if company_for_upload.strip()
-                        else {}
-                    ),
-                    timeout=60.0,
-                )
-                upload_response.raise_for_status()
-                item = upload_response.json()
-                st.success(
-                    f"{item.get('filename', uploaded.name)} added to your filing library."
-                )
-                st.rerun()
-            except Exception as exc:
-                st.error(f"Upload failed: {exc}")
 
     if documents_error:
         st.info(
@@ -425,11 +367,13 @@ with research:
         with st.expander(f"All reports · {len(documents)}"):
             for doc in documents:
                 status = str(doc.get("status") or "unknown")
-                cols = st.columns([5, 2, 1])
-                cols[0].markdown(f"**{doc.get('filename', 'Untitled report')}**")
-                cols[1].markdown(f"`{status}`")
+                st.markdown(f"**{doc.get('filename', 'Untitled report')}**")
                 pages = doc.get("page_count")
-                cols[2].caption(f"{pages} pages" if pages else "")
+                st.caption(
+                    f"{status.capitalize()} | {pages} pages"
+                    if pages
+                    else status.capitalize()
+                )
                 if doc.get("error"):
                     st.caption(str(doc["error"]))
     elif not documents_error and st.session_state.get("access_token"):
@@ -442,16 +386,152 @@ with research:
             "Sign in or enter a workspace access token to load your private reports."
         )
 
-    st.markdown("### Ask about selected reports")
-    with st.form("query_form", clear_on_submit=False):
-        user_query = st.text_area(
-            "Your question", value=DEFAULT_QUERY, height=110, key="query_input"
+    with st.expander("Upload a report", expanded=not bool(documents)):
+        st.caption(
+            "Upload annual reports and SEC filings in PDF format. Documents are private to your account."
         )
-        company_id = st.text_input(
-            "Company identifier",
-            key="company_input",
+        max_upload_bytes = int(config.get("max_upload_bytes") or 25 * 1024 * 1024)
+        uploaded = st.file_uploader(
+            "Add a filing",
+            type=["pdf"],
+            accept_multiple_files=False,
+            key="report_upload",
+            max_upload_size=max(1, math.ceil(max_upload_bytes / (1024 * 1024))),
+        )
+        company_for_upload = st.text_input(
+            "Company identifier (optional)",
+            key="upload_company",
             placeholder="Ticker or company name",
         )
+        if uploaded is not None:
+            st.caption(
+                f"Selected file: {uploaded.name} · {uploaded.size / (1024 * 1024):.1f} MiB · Maximum {max_upload_bytes / (1024 * 1024):.1f} MiB"
+            )
+            too_large = uploaded.size > max_upload_bytes
+            if too_large:
+                st.warning("This PDF exceeds the workspace upload limit.")
+            if st.button(
+                "Upload report",
+                type="primary",
+                key="upload_document",
+                disabled=too_large or not bool(st.session_state.get("access_token")),
+            ):
+                try:
+                    upload_response = _request(
+                        "POST",
+                        "/api/v1/documents",
+                        files={
+                            "file": (
+                                uploaded.name,
+                                uploaded.getvalue(),
+                                "application/pdf",
+                            )
+                        },
+                        data=(
+                            {"company_identifier": company_for_upload.strip()}
+                            if company_for_upload.strip()
+                            else {}
+                        ),
+                        timeout=60.0,
+                    )
+                    upload_response.raise_for_status()
+                    item = upload_response.json()
+                    st.success(
+                        f"{item.get('filename', uploaded.name)} added to your filing library."
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Upload failed: {exc}")
+
+with history_panel:
+    with st.expander("Saved research"):
+        if st.session_state.get("access_token"):
+            try:
+                saved = _get_json("/api/v1/threads").get("items", [])
+                saved = [item for item in saved if isinstance(item, dict)]
+                by_id = {
+                    str(item["thread_id"]): item
+                    for item in saved
+                    if item.get("thread_id")
+                }
+                if by_id:
+                    selected_thread = st.selectbox(
+                        "Saved analysis",
+                        options=list(by_id),
+                        format_func=lambda key: str(
+                            by_id[key].get("input_query") or key
+                        )[:100],
+                        key="saved_thread",
+                    )
+                    if st.button("Open saved analysis", key="open_saved_analysis"):
+                        snapshot = _get_json(f"/api/v1/threads/{selected_thread}/state")
+                        values = snapshot.get("state_values") or {}
+                        summary = by_id[selected_thread]
+                        recovered = {
+                            **values,
+                            "thread_id": selected_thread,
+                            "query": summary.get("input_query"),
+                            "company": summary.get("company_identifier"),
+                            "paused": bool(snapshot.get("is_paused")),
+                            "status": (
+                                "paused"
+                                if snapshot.get("is_paused")
+                                else (
+                                    "complete"
+                                    if values.get("final_answer")
+                                    else "running"
+                                )
+                            ),
+                        }
+                        st.session_state.last_analysis = recovered
+                        st.session_state.analyses = [
+                            recovered,
+                            *[
+                                item
+                                for item in st.session_state.analyses
+                                if item.get("thread_id") != selected_thread
+                            ],
+                        ]
+                        st.rerun()
+                else:
+                    st.caption("Completed and running analyses will appear here.")
+            except Exception as exc:
+                st.caption(f"Saved research is unavailable: {exc}")
+        else:
+            st.caption("Sign in to load saved research.")
+
+
+research, review = st.tabs(["Research", "Review"])
+
+with research:
+    selected_reports = [
+        str(doc.get("filename") or "Untitled report")
+        for doc in documents
+        if doc.get("document_id") in st.session_state.selected_document_ids
+    ]
+    source_label = (
+        ", ".join(html.escape(name) for name in selected_reports)
+        if selected_reports
+        else "Choose reports in the sidebar to get started."
+    )
+    st.markdown(
+        f'<div class="source-summary"><strong>{len(selected_reports)} {"report" if len(selected_reports) == 1 else "reports"} selected</strong><span>{source_label}</span></div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown("### Ask about your reports")
+    with st.form("query_form", clear_on_submit=False):
+        user_query = st.text_area(
+            "Your question",
+            placeholder="For example: How did operating income change from 2020 to 2021?",
+            height=140,
+            key="query_input",
+        )
+        with st.expander("Company filter (optional)"):
+            company_id = st.text_input(
+                "Company identifier",
+                key="company_input",
+                placeholder="Ticker or company name",
+            )
         submitted = st.form_submit_button(
             "Run analysis",
             use_container_width=True,
@@ -541,7 +621,7 @@ with research:
     last_analysis = st.session_state.last_analysis
     if isinstance(last_analysis, dict):
         st.markdown(
-            f"<div class='session-meta'>Latest session · <code>{html.escape(str(last_analysis.get('thread_id', '')))}</code> · {html.escape(str(last_analysis.get('company') or 'Company not specified'))}</div>",
+            f"<div class='session-meta'><strong>Latest analysis</strong><span>{html.escape(str(last_analysis.get('query') or 'Saved research'))}</span></div>",
             unsafe_allow_html=True,
         )
         with st.container(border=True):
@@ -556,62 +636,6 @@ with research:
             '<div class="empty-state"><div class="empty-mark">↗</div><h3>Start with a filing-backed question</h3><p>Select one or more processed reports, then ask about a figure, trend, or disclosure. Results include page references and supporting excerpts.</p></div>',
             unsafe_allow_html=True,
         )
-
-    with st.expander("Saved research"):
-        if st.session_state.get("access_token"):
-            try:
-                saved = _get_json("/api/v1/threads").get("items", [])
-                saved = [item for item in saved if isinstance(item, dict)]
-                by_id = {
-                    str(item["thread_id"]): item
-                    for item in saved
-                    if item.get("thread_id")
-                }
-                if by_id:
-                    selected_thread = st.selectbox(
-                        "Saved analysis",
-                        options=list(by_id),
-                        format_func=lambda key: str(
-                            by_id[key].get("input_query") or key
-                        )[:100],
-                        key="saved_thread",
-                    )
-                    if st.button("Open saved analysis", key="open_saved_analysis"):
-                        snapshot = _get_json(f"/api/v1/threads/{selected_thread}/state")
-                        values = snapshot.get("state_values") or {}
-                        summary = by_id[selected_thread]
-                        recovered = {
-                            **values,
-                            "thread_id": selected_thread,
-                            "query": summary.get("input_query"),
-                            "company": summary.get("company_identifier"),
-                            "paused": bool(snapshot.get("is_paused")),
-                            "status": (
-                                "paused"
-                                if snapshot.get("is_paused")
-                                else (
-                                    "complete"
-                                    if values.get("final_answer")
-                                    else "running"
-                                )
-                            ),
-                        }
-                        st.session_state.last_analysis = recovered
-                        st.session_state.analyses = [
-                            recovered,
-                            *[
-                                item
-                                for item in st.session_state.analyses
-                                if item.get("thread_id") != selected_thread
-                            ],
-                        ]
-                        st.rerun()
-                else:
-                    st.caption("Completed and running analyses will appear here.")
-            except Exception as exc:
-                st.caption(f"Saved research is unavailable: {exc}")
-        else:
-            st.caption("Sign in to load saved research.")
 
     analyses = st.session_state.analyses
     if isinstance(analyses, list) and len(analyses) > 1:
